@@ -497,33 +497,29 @@ def slider(label: str, key: str, min_value: int, max_value: int) -> Any:
 
 
 def objective_weight_buttons(objective: str) -> None:
-    """Affiche la pondération de l'objectif sous forme de boutons."""
-    key = f"w_objective_weight_{safe_key(objective)}"
+    """Affiche la pondération de l'objectif via un radio horizontal (sans conflit nav)."""
+    widget_key = f"w_objective_weight_{safe_key(objective)}"
     weights = st.session_state.draft_answers.setdefault("objective_weights", {})
-    if key not in st.session_state:
-        st.session_state[key] = weights.get(
-            objective,
-            (st.session_state.answers.get("objective_weights", {}) or {}).get(objective, "Important")
-        )
-    current = st.session_state.get(key, weights.get(objective, "Important"))
-    weights[objective] = current
+    saved = (st.session_state.answers.get("objective_weights") or {}).get(objective, "Important")
+    default = weights.get(objective, saved)
+    if widget_key not in st.session_state:
+        st.session_state[widget_key] = default
+
+    def _on_change():
+        val = st.session_state[widget_key]
+        st.session_state.draft_answers.setdefault("objective_weights", {})[objective] = val
+
     st.markdown(f"**{objective}**")
-    cols = st.columns(len(OBJECTIVE_WEIGHT_OPTIONS))
-    for col, option in zip(cols, OBJECTIVE_WEIGHT_OPTIONS):
-        with col:
-            if st.button(
-                option,
-                key=f"btn_{key}_{safe_key(option)}",
-                type="primary" if current == option else "secondary",
-                use_container_width=True,
-                help="Sélectionne le niveau d'importance de cet objectif.",
-            ):
-                st.session_state[key] = option
-                st.session_state.draft_answers.setdefault("objective_weights", {})[objective] = option
-                st.rerun()
-    st.caption(
-        f"Niveau retenu : "
-        f"{st.session_state.draft_answers.get('objective_weights', {}).get(objective, 'Important')}"
+    idx = OBJECTIVE_WEIGHT_OPTIONS.index(st.session_state[widget_key]) \
+        if st.session_state[widget_key] in OBJECTIVE_WEIGHT_OPTIONS else 0
+    st.radio(
+        "Importance",
+        OBJECTIVE_WEIGHT_OPTIONS,
+        index=idx,
+        key=widget_key,
+        horizontal=True,
+        label_visibility="collapsed",
+        on_change=_on_change,
     )
 
 
@@ -1579,7 +1575,22 @@ def get_subpage_idx(sp_id: str, active: List[Dict]) -> int:
     return ids.index(sp_id) if sp_id in ids else 0
 
 
+def _flush_widgets_to_draft() -> None:
+    """Copie TOUS les widgets visibles dans draft_answers avant de changer de page."""
+    for step_keys in STEP_KEYS.values():
+        for key in step_keys:
+            wk = f"w_{key}"
+            if wk in st.session_state:
+                st.session_state.draft_answers[key] = st.session_state[wk]
+    # Pondérations objectifs
+    for obj in (st.session_state.draft_answers.get("objectifs") or []):
+        wk = f"w_objective_weight_{safe_key(obj)}"
+        if wk in st.session_state:
+            st.session_state.draft_answers.setdefault("objective_weights", {})[obj] = st.session_state[wk]
+
+
 def navigate_next(current_idx: int, active_pages: List[Dict]) -> None:
+    _flush_widgets_to_draft()
     current = active_pages[current_idx]
     is_last = current_idx + 1 >= len(active_pages)
     if not is_last:
@@ -1599,6 +1610,7 @@ def navigate_next(current_idx: int, active_pages: List[Dict]) -> None:
 
 
 def navigate_prev(current_idx: int, active_pages: List[Dict]) -> None:
+    _flush_widgets_to_draft()
     if current_idx > 0:
         st.session_state.nav_error = None
         st.session_state.current_subpage = active_pages[current_idx - 1]["id"]
@@ -2444,4 +2456,3 @@ elif page == "Debug validation":
         use_container_width=True, hide_index=True,
         column_config={"Signaux retenus": st.column_config.TextColumn(width="large")},
     )
-    render_view_navigation("Debug validation")
