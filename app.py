@@ -812,110 +812,6 @@ def missing_data(a: Dict) -> List[str]:
     if a.get("pacte_dutreil") == YES and a.get("holding_animatrice") == UNKNOWN:
         gaps.append("Qualification de holding animatrice non renseignée (Pacte Dutreil en cours).")
     return gaps
-def detect_contradictions(a: Dict) -> List[Dict]:
-    """Détecte les incohérences entre les réponses du questionnaire.
-    Retourne une liste de dicts {msg, detail, severity} (warning ou critical)."""
-    c = []
-    objectifs = set(a.get("objectifs") or [])
-    nb_enfants = int(a.get("nb_enfants") or 0)
-    valeur = int(a.get("valeur_entreprise") or 0)
-    poids = int(a.get("poids_entreprise") or 0)
-    horizon = a.get("horizon_transmission") or ""
-
-    # ── Objectif vs situation ──────────────────────────────────────────────────
-    if "Protéger le conjoint et les proches" in objectifs and a.get("conjoint_present") == NO:
-        c.append({
-            "msg": "Objectif « Protéger le conjoint » mais aucun conjoint déclaré",
-            "detail": "Cet objectif ne peut pas être activé sans conjoint présent. À clarifier avec le client.",
-            "severity": "warning",
-        })
-
-    if "Préserver l'équité entre les héritiers" in objectifs and nb_enfants <= 1:
-        c.append({
-            "msg": "Objectif « Équité entre héritiers » avec un seul enfant",
-            "detail": "L'équité entre héritiers n'est pertinente qu'avec au moins 2 héritiers.",
-            "severity": "warning",
-        })
-
-    if "Transmettre l'entreprise" in objectifs and a.get("heritier_repreneur") == NO:
-        c.append({
-            "msg": "Objectif de transmission mais aucun repreneur identifié",
-            "detail": "Sans successeur désigné, la transmission reste bloquée. Envisager un repreneur externe ou une cession.",
-            "severity": "critical",
-        })
-
-    if "Conserver le contrôle familial" in objectifs and a.get("heritier_repreneur") == NO and nb_enfants == 0:
-        c.append({
-            "msg": "Objectif « Contrôle familial » sans héritier ni repreneur",
-            "detail": "Le contrôle familial ne peut se pérenniser sans successeur dans la famille.",
-            "severity": "warning",
-        })
-
-    # ── Calendrier vs préparation ──────────────────────────────────────────────
-    horizon_court = a.get("calendrier_transmission") in ["Moins d'1 an", "1 à 3 ans"]
-    if horizon_court and a.get("successeur_prepare") == NO:
-        c.append({
-            "msg": "Transmission prévue sous 3 ans mais successeur non préparé",
-            "detail": "Un délai aussi court avec un successeur non prêt expose l'entreprise à un risque opérationnel majeur.",
-            "severity": "critical",
-        })
-
-    if horizon_court and a.get("simulation_fiscale") == NO:
-        c.append({
-            "msg": "Horizon court mais aucune simulation fiscale réalisée",
-            "detail": "Sans optimisation fiscale préalable, la transmission peut générer une charge fiscale évitable.",
-            "severity": "critical",
-        })
-
-    if horizon_court and a.get("dialogue_familial") == NO and nb_enfants >= 2:
-        c.append({
-            "msg": "Transmission imminente sans dialogue familial organisé",
-            "detail": "L'absence de concertation familiale en amont multiplie les risques de conflit.",
-            "severity": "warning",
-        })
-
-    # ── Dutreil ───────────────────────────────────────────────────────────────
-    if a.get("pacte_dutreil") == YES and a.get("holding_animatrice") == NO:
-        c.append({
-            "msg": "Pacte Dutreil envisagé mais holding non animatrice",
-            "detail": "Le régime Dutreil exige une holding animatrice. L'exonération de 75 % serait refusée.",
-            "severity": "critical",
-        })
-
-    if "Optimiser la fiscalité" in objectifs and valeur >= 1_500_000 and a.get("pacte_dutreil") in [NO, UNKNOWN]:
-        c.append({
-            "msg": "Valeur élevée (≥ 1,5 M€) sans Pacte Dutreil envisagé",
-            "detail": f"Avec {valeur:,.0f} € de valeur, l'exonération Dutreil (75 %) représente un enjeu fiscal significatif.",
-            "severity": "warning",
-        })
-
-    # ── Patrimoine ────────────────────────────────────────────────────────────
-    if poids >= 80 and "Diversifier le patrimoine" not in objectifs:
-        c.append({
-            "msg": "Entreprise = 80 %+ du patrimoine, mais diversification non citée comme objectif",
-            "detail": "Une concentration aussi forte est un risque patrimonial majeur — vérifier si le client en est conscient.",
-            "severity": "warning",
-        })
-
-    if a.get("actifs_liquides") == "Faible" and a.get("soulte_envisagee") == YES:
-        c.append({
-            "msg": "Soulte envisagée mais actifs liquides faibles",
-            "detail": "Financer une soulte sans liquidités disponibles nécessite un montage spécifique (emprunt, échelonnement).",
-            "severity": "warning",
-        })
-
-    # ── Conjoint ──────────────────────────────────────────────────────────────
-    if a.get("conjoint_present") == YES and a.get("conjoint_dependant") == YES and a.get("protection_conjoint_prevue") == NO:
-        c.append({
-            "msg": "Conjoint dépendant financièrement mais aucune protection prévue",
-            "detail": "En cas de décès ou d'invalidité du dirigeant, le conjoint serait sans ressources protégées.",
-            "severity": "critical",
-        })
-
-    return c
-
-
-
 
 
 # =============================================================================
@@ -1219,170 +1115,489 @@ def create_docx_report(client_name: str, answers: Dict, df: pd.DataFrame, eviden
     if Document is None:
         raise RuntimeError("La dépendance python-docx n'est pas installée.")
 
-    detected = df[df["Score"] > 0].copy()
+    detected = df[df["Score"] > 0].sort_values("Score", ascending=False).copy()
+
+    # Palette
+    C_PRIMARY = "0B6E82"
+    C_PRIM_L  = "E0F2F7"
+    C_CRIT    = "991B1B"
+    C_CRIT_BG = "FEE2E2"
+    C_HIGH    = "92400E"
+    C_HIGH_BG = "FEF3C7"
+    C_MED     = "1E40AF"
+    C_MED_BG  = "DBEAFE"
+    C_LOW     = "065F46"
+    C_LOW_BG  = "D1FAE5"
+    C_GRAY    = "475569"
+    C_LIGHT   = "F8FAFC"
+    C_BORDER  = "CBD5E1"
+    C_WHITE   = "FFFFFF"
+    C_DARK    = "1E293B"
+
+    LEVEL_COLORS = {
+        "Critique":   (C_CRIT, C_CRIT_BG),
+        "Élevé":      (C_HIGH, C_HIGH_BG),
+        "Moyen":      (C_MED,  C_MED_BG),
+        "Faible":     (C_LOW,  C_LOW_BG),
+        "Inexistant": (C_GRAY, C_LIGHT),
+    }
+
     doc = Document()
 
-    # ── Helpers internes ───────────────────────────────────────────────────
-    def shade_cell(cell, hex_color: str) -> None:
-        shading = OxmlElement("w:shd")
-        shading.set(qn("w:val"), "clear")
-        shading.set(qn("w:color"), "auto")
-        shading.set(qn("w:fill"), hex_color.lstrip("#"))
-        cell._tc.get_or_add_tcPr().append(shading)
+    for section in doc.sections:
+        section.top_margin    = Inches(1.0)
+        section.bottom_margin = Inches(1.0)
+        section.left_margin   = Inches(1.2)
+        section.right_margin  = Inches(1.2)
 
-    def set_cell_text(cell, text: str, bold: bool = False, font_size: int = 11,
-                       color_hex: str = "000000") -> None:
+    def shade_cell(cell, hex_color):
+        shd = OxmlElement("w:shd")
+        shd.set(qn("w:val"),   "clear")
+        shd.set(qn("w:color"), "auto")
+        shd.set(qn("w:fill"),  hex_color.lstrip("#"))
+        cell._tc.get_or_add_tcPr().append(shd)
+
+    def set_cell_border(cell, sides=("top", "bottom", "left", "right"),
+                        color="CBD5E1", size="4"):
+        tcPr = cell._tc.get_or_add_tcPr()
+        tcBorders = OxmlElement("w:tcBorders")
+        for s in sides:
+            el = OxmlElement("w:" + s)
+            el.set(qn("w:val"),   "single")
+            el.set(qn("w:sz"),    size)
+            el.set(qn("w:space"), "0")
+            el.set(qn("w:color"), color)
+            tcBorders.append(el)
+        tcPr.append(tcBorders)
+
+    def cell_write(cell, text, bold=False, size=10, color="000000",
+                   italic=False, align=None):
         cell.text = ""
-        run = cell.paragraphs[0].add_run(str(text))
+        p = cell.paragraphs[0]
+        if align:
+            p.alignment = align
+        run = p.add_run(str(text))
+        run.bold   = bold
+        run.italic = italic
+        run.font.size = Pt(size)
+        run.font.color.rgb = RGBColor.from_string(color)
+        run.font.name = "Calibri"
+
+    def band_para(text, fg=C_WHITE, bg=C_PRIMARY, size=14, bold=True,
+                  align=WD_ALIGN_PARAGRAPH.LEFT, sb=80, sa=80):
+        p = doc.add_paragraph()
+        p.alignment = align
+        pPr = p._p.get_or_add_pPr()
+        shd = OxmlElement("w:shd")
+        shd.set(qn("w:val"), "clear")
+        shd.set(qn("w:color"), "auto")
+        shd.set(qn("w:fill"), bg.lstrip("#"))
+        pPr.append(shd)
+        ind = OxmlElement("w:ind")
+        ind.set(qn("w:left"),  "240")
+        ind.set(qn("w:right"), "240")
+        pPr.append(ind)
+        spc = OxmlElement("w:spacing")
+        spc.set(qn("w:before"), str(sb))
+        spc.set(qn("w:after"),  str(sa))
+        pPr.append(spc)
+        run = p.add_run(text)
         run.bold = bold
-        run.font.size = Pt(font_size)
-        run.font.color.rgb = RGBColor.from_string(color_hex)
+        run.font.size = Pt(size)
+        run.font.color.rgb = RGBColor.from_string(fg.lstrip("#"))
+        run.font.name = "Calibri"
+        return p
 
-    def add_bullets(items: List[str]) -> None:
-        for item in items:
-            p = doc.add_paragraph(style="List Bullet")
-            p.add_run(item).font.size = Pt(10)
+    def left_border_para(text, color_hex=C_PRIMARY, size=10, italic=False):
+        p = doc.add_paragraph()
+        pPr = p._p.get_or_add_pPr()
+        pBdr = OxmlElement("w:pBdr")
+        left = OxmlElement("w:left")
+        left.set(qn("w:val"),   "single")
+        left.set(qn("w:sz"),    "18")
+        left.set(qn("w:space"), "6")
+        left.set(qn("w:color"), color_hex.lstrip("#"))
+        pBdr.append(left)
+        pPr.append(pBdr)
+        ind = OxmlElement("w:ind")
+        ind.set(qn("w:left"), "200")
+        pPr.append(ind)
+        run = p.add_run(text)
+        run.font.size = Pt(size)
+        run.italic = italic
+        run.font.name = "Calibri"
+        run.font.color.rgb = RGBColor.from_string(C_GRAY)
+        p.paragraph_format.space_before = Pt(2)
+        p.paragraph_format.space_after  = Pt(2)
+        return p
 
-    def add_small_note(text: str) -> None:
-        p = doc.add_paragraph(text)
-        p.runs[0].font.size = Pt(9)
-        p.runs[0].italic = True
+    def spacer():
+        p = doc.add_paragraph()
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after  = Pt(0)
 
-    def add_heading(text: str, level: int = 1) -> None:
-        doc.add_heading(text, level=level)
+    def section_title(text, color=C_PRIMARY):
+        band_para(text, fg=C_WHITE, bg=color, size=13, bold=True, sb=160, sa=60)
 
-    # ── Couverture ────────────────────────────────────────────────────────
-    doc.add_heading("Diagnostic Holding Familiale", level=0)
-    doc.add_paragraph(f"Client : {client_name or 'N/A'}")
-    doc.add_paragraph(f"Entreprise : {answers.get('company_name', 'N/A')}")
-    doc.add_paragraph(f"CGP / Cabinet : {answers.get('cgp_name', 'N/A')}")
-    doc.add_paragraph(f"Date : {datetime.now().strftime('%d/%m/%Y')}")
-    doc.add_paragraph(
-        "Document confidentiel — généré automatiquement par le système expert CGP Holding Familiale"
-    )
-    doc.add_page_break()
+    def sub_title(text):
+        p = doc.add_paragraph()
+        run = p.add_run(text)
+        run.bold = True
+        run.font.size = Pt(11)
+        run.font.name = "Calibri"
+        run.font.color.rgb = RGBColor.from_string(C_PRIMARY)
+        p.paragraph_format.space_before = Pt(8)
+        p.paragraph_format.space_after  = Pt(3)
 
-    # ── Synthèse exécutive ────────────────────────────────────────────────
-    add_heading("Synthèse exécutive", 1)
-    n_crit = int((detected["Niveau"] == "Critique").sum()) if not detected.empty else 0
-    n_elev = int((detected["Niveau"] == "Élevé").sum()) if not detected.empty else 0
-    doc.add_paragraph(
-        f"Ce diagnostic identifie {len(detected)} risque(s) actif(s) sur 12 analysés, "
-        f"dont {n_crit} critique(s) et {n_elev} élevé(s)."
-    )
-    orientation = answers.get("rapport_orientation", "Équilibré")
-    doc.add_paragraph(f"Orientation du rapport : {orientation}.")
+    def body_para(text, size=10):
+        p = doc.add_paragraph()
+        run = p.add_run(text)
+        run.font.size = Pt(size)
+        run.font.name = "Calibri"
+        run.font.color.rgb = RGBColor.from_string(C_DARK)
+        p.paragraph_format.space_before = Pt(2)
+        p.paragraph_format.space_after  = Pt(2)
 
-    # ── Contexte ──────────────────────────────────────────────────────────
-    doc.add_page_break()
-    add_heading("Contexte du dossier", 1)
-    fields = [
-        ("Âge du dirigeant", answers.get("client_age", "N/A")),
-        ("Entreprise", answers.get("company_name", "N/A")),
-        ("Forme juridique", answers.get("company_form", "N/A")),
-        ("Activité / secteur", answers.get("company_activity", "N/A")),
-        ("Maturité du projet", answers.get("maturite_projet", "N/A")),
-        ("Horizon de transmission", answers.get("delai_transmission", "N/A")),
-        ("Valeur de l'entreprise", f"{int(answers.get('valeur_entreprise', 0)):,} €".replace(",", " ")),
-        ("Poids dans le patrimoine", f"{answers.get('poids_entreprise', 0)} %"),
-        ("Nombre d'enfants", answers.get("nb_enfants", "N/A")),
-        ("Conjoint présent", answers.get("conjoint_present", "N/A")),
+    def bullet_item(text):
+        p = doc.add_paragraph(style="List Bullet")
+        run = p.add_run(text)
+        run.font.size = Pt(10)
+        run.font.name = "Calibri"
+        run.font.color.rgb = RGBColor.from_string(C_DARK)
+        p.paragraph_format.space_before = Pt(1)
+        p.paragraph_format.space_after  = Pt(1)
+
+    def h_rule(color=C_BORDER):
+        p = doc.add_paragraph()
+        pPr = p._p.get_or_add_pPr()
+        pBdr = OxmlElement("w:pBdr")
+        bot  = OxmlElement("w:bottom")
+        bot.set(qn("w:val"),   "single")
+        bot.set(qn("w:sz"),    "2")
+        bot.set(qn("w:color"), color)
+        pBdr.append(bot)
+        pPr.append(pBdr)
+
+    def setup_header_footer(sec):
+        hdr = sec.header
+        hdr.is_linked_to_previous = False
+        hp = hdr.paragraphs[0] if hdr.paragraphs else hdr.add_paragraph()
+        hp.clear()
+        hp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        r1 = hp.add_run("Diagnostic Holding Familiale")
+        r1.font.size = Pt(8)
+        r1.font.name = "Calibri"
+        r1.font.bold = True
+        r1.font.color.rgb = RGBColor.from_string(C_GRAY)
+        if client_name:
+            r2 = hp.add_run("  \xb7  " + client_name)
+            r2.font.size = Pt(8)
+            r2.font.name = "Calibri"
+            r2.font.color.rgb = RGBColor.from_string(C_GRAY)
+        pPr = hp._p.get_or_add_pPr()
+        pBdr = OxmlElement("w:pBdr")
+        bot  = OxmlElement("w:bottom")
+        bot.set(qn("w:val"),   "single")
+        bot.set(qn("w:sz"),    "4")
+        bot.set(qn("w:color"), C_PRIMARY)
+        pBdr.append(bot)
+        pPr.append(pBdr)
+        ftr = sec.footer
+        ftr.is_linked_to_previous = False
+        fp = ftr.paragraphs[0] if ftr.paragraphs else ftr.add_paragraph()
+        fp.clear()
+        fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r_lbl = fp.add_run("Document confidentiel  \xb7  Page ")
+        r_lbl.font.size = Pt(8)
+        r_lbl.font.name = "Calibri"
+        r_lbl.font.color.rgb = RGBColor.from_string(C_GRAY)
+        fld_begin = OxmlElement("w:fldChar")
+        fld_begin.set(qn("w:fldCharType"), "begin")
+        r_begin = fp.add_run()
+        r_begin._r.append(fld_begin)
+        instr = OxmlElement("w:instrText")
+        instr.text = " PAGE "
+        r_instr = fp.add_run()
+        r_instr._r.append(instr)
+        fld_end = OxmlElement("w:fldChar")
+        fld_end.set(qn("w:fldCharType"), "end")
+        r_end = fp.add_run()
+        r_end._r.append(fld_end)
+        for r in (r_lbl, r_begin, r_instr, r_end):
+            r.font.size = Pt(8)
+            r.font.name = "Calibri"
+            r.font.color.rgb = RGBColor.from_string(C_GRAY)
+
+    for sec in doc.sections:
+        setup_header_footer(sec)
+
+    # PAGE DE GARDE
+    for _ in range(3):
+        spacer()
+    band_para("Diagnostic Holding Familiale",
+              fg=C_WHITE, bg=C_PRIMARY, size=22, bold=True, sb=200, sa=160)
+    band_para("Système expert — Analyse des risques & plan d’action",
+              fg=C_PRIM_L, bg=C_PRIMARY, size=11, bold=False, sb=0, sa=240)
+    spacer()
+    spacer()
+    tbl_cov = doc.add_table(rows=4, cols=2)
+    tbl_cov.style = "Table Grid"
+    cov_rows = [
+        ("Client",         client_name or "—"),
+        ("Entreprise",     answers.get("company_name") or "—"),
+        ("Cabinet / CGP",  answers.get("cgp_name") or "—"),
+        ("Date",           datetime.now().strftime("%d %B %Y")),
     ]
-    table = doc.add_table(rows=len(fields), cols=2)
-    table.style = "Table Grid"
-    for i, (label, value) in enumerate(fields):
-        table.rows[i].cells[0].text = label
-        table.rows[i].cells[1].text = str(value)
-
-    # ── Objectifs et pondérations ─────────────────────────────────────────
+    for i, (lbl, val) in enumerate(cov_rows):
+        shade_cell(tbl_cov.rows[i].cells[0], C_PRIM_L)
+        cell_write(tbl_cov.rows[i].cells[0], lbl, bold=True, size=10, color=C_PRIMARY)
+        cell_write(tbl_cov.rows[i].cells[1], val, size=10)
+        for c in tbl_cov.rows[i].cells:
+            set_cell_border(c, color=C_BORDER)
+    tbl_cov.columns[0].width = Inches(1.8)
+    tbl_cov.columns[1].width = Inches(3.5)
+    for _ in range(4):
+        spacer()
+    n_crit = int((detected["Niveau"] == "Critique").sum()) if not detected.empty else 0
+    n_high = int((detected["Niveau"] == "Élevé").sum()) if not detected.empty else 0
+    synth  = (str(len(detected)) + " risque(s) identifié(s)  ·  "
+              + str(n_crit) + " critique(s)  ·  " + str(n_high) + " élevé(s)")
+    kpi_bg = C_CRIT_BG if n_crit else C_HIGH_BG if n_high else C_LOW_BG
+    kpi_fg = C_CRIT if n_crit else C_HIGH if n_high else C_LOW
+    band_para(synth, fg=kpi_fg, bg=kpi_bg, size=10, bold=True, sb=100, sa=100)
+    spacer()
+    p_disc = doc.add_paragraph()
+    r_disc = p_disc.add_run(
+        "Document confidentiel généré automatiquement par le système expert CGP. "
+        "Ce rapport est un outil d’aide à la décision et ne constitue pas un conseil juridique ou fiscal."
+    )
+    r_disc.font.size = Pt(8)
+    r_disc.italic = True
+    r_disc.font.name = "Calibri"
+    r_disc.font.color.rgb = RGBColor.from_string(C_GRAY)
+    p_disc.alignment = WD_ALIGN_PARAGRAPH.CENTER
     doc.add_page_break()
-    add_heading("Objectifs et pondérations", 1)
-    objectifs = answers.get("objectifs") or []
-    if objectifs:
-        weights = answers.get("objective_weights") or {}
-        table_obj = doc.add_table(rows=1 + len(objectifs), cols=2)
-        table_obj.style = "Table Grid"
-        table_obj.rows[0].cells[0].text = "Objectif"
-        table_obj.rows[0].cells[1].text = "Pondération"
-        for idx, obj in enumerate(objectifs, start=1):
-            table_obj.rows[idx].cells[0].text = obj
-            table_obj.rows[idx].cells[1].text = weights.get(obj, "Important")
-    if answers.get("objectif_libre"):
-        doc.add_paragraph(f"\nObjectif exprimé par le client : {answers['objectif_libre']}")
 
-    # ── Matrice des risques ───────────────────────────────────────────────
-    doc.add_page_break()
-    add_heading("Matrice des risques", 1)
-    cols_matrix = ["Risque", "Niveau", "Score", "Probabilité", "Gravité"]
-    t = doc.add_table(rows=1 + len(df), cols=len(cols_matrix))
-    t.style = "Table Grid"
-    LEVEL_COLORS = {"Critique": "7f1d1d", "Élevé": "b45309",
-                    "Moyen": "1d4ed8", "Faible": "047857", "Inexistant": "6b7280"}
-    for j, col in enumerate(cols_matrix):
-        t.rows[0].cells[j].text = col
-    for i, (_, row) in enumerate(df.iterrows(), start=1):
-        t.rows[i].cells[0].text = str(row["Risque"])
-        set_cell_text(t.rows[i].cells[1], str(row["Niveau"]), bold=True,
-                      color_hex=LEVEL_COLORS.get(str(row["Niveau"]), "000000"))
-        t.rows[i].cells[2].text = str(int(row["Score"]))
-        t.rows[i].cells[3].text = str(int(row["Probabilité"]))
-        t.rows[i].cells[4].text = str(int(row["Gravité"]))
-
-    # ── Analyse détaillée ─────────────────────────────────────────────────
+    # SYNTHESE EXECUTIVE
+    section_title("SYNTHÈSE EXÉCUTIVE")
+    spacer()
+    tbl_met = doc.add_table(rows=2, cols=4)
+    tbl_met.style = "Table Grid"
+    score_max = int(detected["Score"].max()) if not detected.empty else 0
+    metrics = [
+        ("Risques analysés",  str(len(df)),         C_PRIMARY, C_PRIM_L),
+        ("Risques détectés", str(len(detected)), C_GRAY,   C_LIGHT),
+        ("Critiques",              str(n_crit),           C_CRIT,    C_CRIT_BG),
+        ("Score maximum",          str(score_max),        C_HIGH,    C_HIGH_BG),
+    ]
+    for j, (lbl, val, fg, bg) in enumerate(metrics):
+        shade_cell(tbl_met.rows[0].cells[j], bg)
+        shade_cell(tbl_met.rows[1].cells[j], bg)
+        cell_write(tbl_met.rows[0].cells[j], val, bold=True, size=22, color=fg,
+                   align=WD_ALIGN_PARAGRAPH.CENTER)
+        cell_write(tbl_met.rows[1].cells[j], lbl, bold=False, size=9,  color=fg,
+                   align=WD_ALIGN_PARAGRAPH.CENTER)
+        for ri in range(2):
+            set_cell_border(tbl_met.rows[ri].cells[j], color=bg)
+    for col in tbl_met.columns:
+        col.width = Inches(1.4)
+    spacer()
     if not detected.empty:
-        doc.add_page_break()
-        add_heading("Analyse détaillée des risques identifiés", 1)
-        for _, row in detected.iterrows():
-            definition = RISK_DEFINITIONS[row["Code"]]
-            add_heading(f"{row['Risque']} — {row['Niveau']} (Score : {int(row['Score'])})", 2)
-            doc.add_paragraph(f"Objectif concerné : {definition.objectif}")
-            doc.add_paragraph(
-                f"Score : {int(row['Score'])} | "
-                f"Probabilité : {score_to_label(int(row['Probabilité']))} | "
-                f"Gravité : {score_to_label(int(row['Gravité']))}"
-            )
-            signals = evidence.get(row["Code"], [])
-            if signals:
-                add_heading("Signaux retenus", 3)
-                add_bullets(signals)
-            add_heading("Conséquences possibles", 3)
-            add_bullets(definition.consequences)
-            add_heading("Outils à étudier", 3)
-            add_bullets(definition.outils)
-            add_heading("Actions préventives", 3)
-            add_bullets(definition.actions_preventives)
-            doc.add_paragraph(
-                f"Professionnels à mobiliser : {', '.join(definition.professionnels)}"
-            )
-
-    # ── Plan d'action ─────────────────────────────────────────────────────
+        sub_title("Risques identifiés — vue d’ensemble")
+        tbl_sum = doc.add_table(rows=1 + len(detected), cols=4)
+        tbl_sum.style = "Table Grid"
+        for j, h in enumerate(["Risque", "Objectif concerné", "Niveau", "Score"]):
+            shade_cell(tbl_sum.rows[0].cells[j], C_PRIMARY)
+            cell_write(tbl_sum.rows[0].cells[j], h, bold=True, size=9, color=C_WHITE,
+                       align=WD_ALIGN_PARAGRAPH.CENTER)
+        for i, (_, row) in enumerate(detected.iterrows(), 1):
+            niveau = str(row["Niveau"])
+            fg_c, bg_c = LEVEL_COLORS.get(niveau, (C_GRAY, C_LIGHT))
+            shade_cell(tbl_sum.rows[i].cells[2], bg_c)
+            tbl_sum.rows[i].cells[0].text = str(row["Risque"])
+            tbl_sum.rows[i].cells[1].text = str(row.get("Objectif", ""))
+            cell_write(tbl_sum.rows[i].cells[2], niveau, bold=True, size=9,
+                       color=fg_c, align=WD_ALIGN_PARAGRAPH.CENTER)
+            cell_write(tbl_sum.rows[i].cells[3], str(int(row["Score"])),
+                       bold=True, size=9, color=fg_c, align=WD_ALIGN_PARAGRAPH.CENTER)
+            for j in range(4):
+                set_cell_border(tbl_sum.rows[i].cells[j], color=C_BORDER)
+        tbl_sum.columns[0].width = Inches(2.4)
+        tbl_sum.columns[1].width = Inches(1.8)
+        tbl_sum.columns[2].width = Inches(1.0)
+        tbl_sum.columns[3].width = Inches(0.6)
+    spacer()
+    sub_title("Objectifs du dirigeant")
+    objectifs = answers.get("objectifs") or []
+    weights   = answers.get("objective_weights") or {}
+    if objectifs:
+        tbl_obj = doc.add_table(rows=1 + len(objectifs), cols=2)
+        tbl_obj.style = "Table Grid"
+        shade_cell(tbl_obj.rows[0].cells[0], C_PRIMARY)
+        shade_cell(tbl_obj.rows[0].cells[1], C_PRIMARY)
+        cell_write(tbl_obj.rows[0].cells[0], "Objectif",      bold=True, size=9, color=C_WHITE)
+        cell_write(tbl_obj.rows[0].cells[1], "Pondération", bold=True, size=9,
+                   color=C_WHITE, align=WD_ALIGN_PARAGRAPH.CENTER)
+        for i, obj in enumerate(objectifs, 1):
+            w   = weights.get(obj, "Important")
+            w_c = C_CRIT if w == "Critique" else C_HIGH if w == "Important" else C_GRAY
+            tbl_obj.rows[i].cells[0].text = obj
+            cell_write(tbl_obj.rows[i].cells[1], w, bold=True, size=9,
+                       color=w_c, align=WD_ALIGN_PARAGRAPH.CENTER)
+            for j in range(2):
+                set_cell_border(tbl_obj.rows[i].cells[j], color=C_BORDER)
+            if i % 2 == 0:
+                shade_cell(tbl_obj.rows[i].cells[0], C_LIGHT)
+                shade_cell(tbl_obj.rows[i].cells[1], C_LIGHT)
+        tbl_obj.columns[0].width = Inches(4.0)
+        tbl_obj.columns[1].width = Inches(1.8)
     doc.add_page_break()
-    add_heading("Plan d'action hiérarchisé", 1)
+
+    # CONTEXTE DU DOSSIER
+    section_title("CONTEXTE DU DOSSIER")
+    spacer()
+    val_ent = answers.get("valeur_entreprise") or 0
+    val_str = "{:,}".format(int(val_ent)).replace(",", " ") + " €"
+    poids   = str(answers.get("poids_entreprise") or 0) + " %"
+    ctx_rows = [
+        ("Dirigeant",                  client_name or "—"),
+        ("Âge",                   str(answers.get("client_age", "—"))),
+        ("Entreprise",                 answers.get("company_name") or "—"),
+        ("Forme juridique",            answers.get("company_form") or "—"),
+        ("Secteur d’activité", answers.get("company_activity") or "—"),
+        ("Valeur estimée",        val_str),
+        ("Poids patrimonial",          poids),
+        ("Actifs liquides",            answers.get("actifs_liquides") or "—"),
+        ("Nombre d’enfants",      str(answers.get("nb_enfants", "—"))),
+        ("Conjoint présent",      answers.get("conjoint_present") or "—"),
+        ("Famille recomposée",    answers.get("famille_recomposee") or "—"),
+        ("Maturité du projet",    answers.get("maturite_projet") or "—"),
+        ("Calendrier transmission",    answers.get("calendrier_transmission") or "—"),
+        ("Repreneur identifié",   answers.get("heritier_repreneur") or "—"),
+        ("Simulation fiscale",         answers.get("simulation_fiscale") or "—"),
+        ("Pacte Dutreil envisagé", answers.get("pacte_dutreil") or "—"),
+    ]
+    tbl_ctx = doc.add_table(rows=0, cols=2)
+    tbl_ctx.style = "Table Grid"
+    for i, (lbl, val) in enumerate(ctx_rows):
+        row_c = tbl_ctx.add_row()
+        bg = C_PRIM_L if i % 2 == 0 else C_WHITE
+        shade_cell(row_c.cells[0], bg)
+        shade_cell(row_c.cells[1], bg)
+        cell_write(row_c.cells[0], lbl, bold=True, size=10, color=C_PRIMARY)
+        cell_write(row_c.cells[1], val, size=10)
+        for c in row_c.cells:
+            set_cell_border(c, color=C_BORDER)
+    tbl_ctx.columns[0].width = Inches(2.5)
+    tbl_ctx.columns[1].width = Inches(3.3)
+    doc.add_page_break()
+
+    # ANALYSE DETAILLEE
+    if not detected.empty:
+        section_title("ANALYSE DÉTAILLÉE DES RISQUES")
+        spacer()
+        for k, (_, row) in enumerate(detected.iterrows()):
+            code = row["Code"]
+            definition = RISK_DEFINITIONS.get(code)
+            if definition is None:
+                continue
+            niveau      = str(row["Niveau"])
+            fg_c, bg_c  = LEVEL_COLORS.get(niveau, (C_GRAY, C_LIGHT))
+            risque_name = str(row["Risque"])
+            titre = str(k + 1) + ".  " + risque_name
+            band_para(titre, fg=C_WHITE, bg=fg_c, size=12, bold=True, sb=120, sa=0)
+            meta = ("Niveau : " + niveau
+                    + "   ·   Score : " + str(int(row["Score"]))
+                    + "   ·   Probabilité : " + str(int(row["Probabilité"])) + "/5"
+                    + "   ·   Gravité : " + str(int(row["Gravité"])) + "/5")
+            band_para(meta, fg=fg_c, bg=bg_c, size=9, bold=False, sb=0, sa=80)
+            signals = evidence.get(code, [])
+            if signals:
+                sub_title("Signaux retenus")
+                for s in signals:
+                    left_border_para(s, color_hex=fg_c, size=10)
+            if definition.consequences:
+                sub_title("Conséquences possibles")
+                for c in definition.consequences:
+                    bullet_item(c)
+            if definition.outils:
+                sub_title("Outils & solutions")
+                for o in definition.outils:
+                    bullet_item(o)
+            if definition.actions_preventives:
+                sub_title("Actions préventives recommandées")
+                for a in definition.actions_preventives:
+                    bullet_item(a)
+            if definition.professionnels:
+                p_pro = doc.add_paragraph()
+                r_lbl = p_pro.add_run("Professionnels à mobiliser : ")
+                r_lbl.bold = True
+                r_lbl.font.size = Pt(9)
+                r_lbl.font.name = "Calibri"
+                r_lbl.font.color.rgb = RGBColor.from_string(C_GRAY)
+                r_val = p_pro.add_run(", ".join(definition.professionnels))
+                r_val.font.size = Pt(9)
+                r_val.italic = True
+                r_val.font.name = "Calibri"
+                r_val.font.color.rgb = RGBColor.from_string(C_GRAY)
+            if k < len(detected) - 1:
+                spacer()
+                h_rule()
+                spacer()
+        doc.add_page_break()
+
+    # PLAN D'ACTION
+    section_title("PLAN D’ACTION HIÉRARCHISÉ")
+    spacer()
     plan = build_action_plan(df)
     if not plan.empty:
-        for horizon in ["Actions immédiates", "Actions à moyen terme", "Suivi annuel"]:
+        horizon_styles = [
+            ("Actions immédiates",    C_CRIT),
+            ("Actions à moyen terme", C_HIGH),
+            ("Suivi annuel",              C_MED),
+        ]
+        for horizon, h_color in horizon_styles:
             hdf = plan[plan["Horizon"] == horizon]
-            if not hdf.empty:
-                add_heading(horizon, 2)
-                for _, row in hdf.iterrows():
-                    doc.add_paragraph(
-                        f"[{row['Priorité']}] {row['Action']} "
-                        f"— Pros : {row['Professionnels']}",
-                        style="List Bullet",
-                    )
+            if hdf.empty:
+                continue
+            band_para(horizon, fg=C_WHITE, bg=h_color, size=11, bold=True, sb=80, sa=40)
+            tbl_plan = doc.add_table(rows=1 + len(hdf), cols=3)
+            tbl_plan.style = "Table Grid"
+            for j, h in enumerate(["Action", "Priorité", "Professionnels"]):
+                shade_cell(tbl_plan.rows[0].cells[j], h_color)
+                cell_write(tbl_plan.rows[0].cells[j], h, bold=True, size=9, color=C_WHITE)
+            for i, (_, pr) in enumerate(hdf.iterrows(), 1):
+                bg = C_LIGHT if i % 2 == 0 else C_WHITE
+                for j in range(3):
+                    shade_cell(tbl_plan.rows[i].cells[j], bg)
+                    set_cell_border(tbl_plan.rows[i].cells[j], color=C_BORDER)
+                cell_write(tbl_plan.rows[i].cells[0], str(pr.get("Action", "")), size=9)
+                cell_write(tbl_plan.rows[i].cells[1], str(pr.get("Priorité", "")),
+                           bold=True, size=9, color=h_color,
+                           align=WD_ALIGN_PARAGRAPH.CENTER)
+                cell_write(tbl_plan.rows[i].cells[2], str(pr.get("Professionnels", "")),
+                           size=9, italic=True, color=C_GRAY)
+            tbl_plan.columns[0].width = Inches(3.4)
+            tbl_plan.columns[1].width = Inches(0.8)
+            tbl_plan.columns[2].width = Inches(1.6)
+            spacer()
 
-    # ── Observations ──────────────────────────────────────────────────────
     if answers.get("observations"):
         doc.add_page_break()
-        add_heading("Observations du CGP", 1)
-        doc.add_paragraph(answers["observations"])
+        section_title("OBSERVATIONS DU CGP")
+        spacer()
+        left_border_para(answers["observations"], color_hex=C_PRIMARY, size=10)
 
-    # ── Footer ────────────────────────────────────────────────────────────
     doc.add_page_break()
-    doc.add_paragraph(
-        "Document généré automatiquement — Système expert CGP Holding Familiale\n"
-        "Ce rapport est un outil d'aide à la décision. Il ne constitue pas un conseil juridique "
-        "ou fiscal et doit être complété par les professionnels compétents."
+    band_para("AVERTISSEMENT LÉGAL", fg=C_WHITE, bg=C_GRAY,
+              size=10, bold=True, sb=80, sa=60)
+    body_para(
+        "Le présent rapport est généré automatiquement par un système expert d’aide "
+        "à la décision à destination des professionnels du conseil en gestion de patrimoine (CGP). "
+        "Il ne constitue en aucun cas un conseil juridique, fiscal ou financier au sens réglementaire, "
+        "et ne saurait engager la responsabilité de ses auteurs. "
+        "Les données saisies et les résultats obtenus doivent être vérifiés "
+        "par les professionnels compétents (notaire, avocat fiscaliste, expert-comptable)."
     )
 
     buffer = BytesIO()
@@ -1391,9 +1606,6 @@ def create_docx_report(client_name: str, answers: Dict, df: pd.DataFrame, eviden
     return buffer.getvalue()
 
 
-# =============================================================================
-# 9. Export Excel (XLSX)
-# =============================================================================
 
 def create_xlsx_matrix(df: pd.DataFrame) -> bytes:
     """Génère une matrice Excel lisible et directement exploitable."""
@@ -2095,17 +2307,6 @@ def render_subpage(sp_id: str) -> None:
                 ):
                     for g in gaps:
                         st.write(f"- {g}")
-            contras = detect_contradictions(validated_answers)
-            if contras:
-                _crit = [c for c in contras if c["severity"] == "critical"]
-                _warn = [c for c in contras if c["severity"] == "warning"]
-                _lbl = (f"🔴 {len(_crit)} incohérence(s) critique(s) — à traiter avant de conclure"
-                        if _crit else f"⚠️ {len(contras)} point(s) à clarifier avec le client")
-                with st.expander(_lbl, expanded=True):
-                    for ct in _crit:
-                        st.error(f"**{ct['msg']}**  \n{ct['detail']}")
-                    for ct in _warn:
-                        st.warning(f"**{ct['msg']}**  \n{ct['detail']}")
             if detected_df.empty:
                 st.success("✅ Aucun risque détecté sur la base des réponses validées.")
             else:
@@ -2303,17 +2504,6 @@ elif page == "Résultats et solutions":
         with st.expander(f"⚠️ {len(gaps)} information(s) manquante(s) pour affiner le diagnostic"):
             for g in gaps:
                 st.write(f"- {g}")
-
-    contras = detect_contradictions(validated_answers)
-    if contras:
-        critiques = [c for c in contras if c["severity"] == "critical"]
-        warnings  = [c for c in contras if c["severity"] == "warning"]
-        label = f"🔴 {len(critiques)} incohérence(s) critique(s)" if critiques else f"⚠️ {len(contras)} incohérence(s) détectée(s)"
-        with st.expander(label, expanded=bool(critiques)):
-            for ct in critiques:
-                st.error(f"**{ct['msg']}**  \n{ct['detail']}")
-            for ct in warnings:
-                st.warning(f"**{ct['msg']}**  \n{ct['detail']}")
 
     if not detected_df.empty:
         section_card("Visualisation des scores", "📊")
