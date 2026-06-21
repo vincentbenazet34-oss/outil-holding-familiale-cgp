@@ -353,7 +353,8 @@ def weight_for_risk(code: str, answers: Dict[str, Any] | None) -> Tuple[str, flo
     if code == "dependance" and "Diversifier le patrimoine" not in objectives and "Protéger le conjoint et les proches" in objectives:
         objective = "Protéger le conjoint et les proches"
     label = get_objective_weight(answers, objective) if objective else "Important"
-    return label, OBJECTIVE_WEIGHT_FACTORS.get(label, 1.0)
+    factor = get_objective_factor(answers, objective) if objective else 1.0
+    return label, factor
 
 def init_app() -> None:
     if "answers" not in st.session_state:
@@ -378,6 +379,12 @@ def reset_app() -> None:
     init_app()
 
 
+
+
+# =============================================================================
+# 2. (suite) Sync, validation, widgets
+# =============================================================================
+
 def sync_draft_key(key: str) -> None:
     """Copie immédiatement la valeur d'un widget dans le brouillon."""
     widget_key = f"w_{key}"
@@ -386,13 +393,14 @@ def sync_draft_key(key: str) -> None:
 
 
 def sync_widget_from_draft(key: str) -> None:
-    """Initialise le widget avec la dernière valeur saisie, ou avec la valeur validée si aucun brouillon n'existe."""
-    value = st.session_state.draft_answers.get(key, st.session_state.answers.get(key, DEFAULT_ANSWERS.get(key)))
+    """Initialise le widget avec la dernière valeur saisie."""
+    value = st.session_state.draft_answers.get(
+        key, st.session_state.answers.get(key, DEFAULT_ANSWERS.get(key))
+    )
     st.session_state.setdefault(f"w_{key}", value)
 
 
 def set_answer_and_draft(key: str, value: Any) -> None:
-    """Met à jour simultanément la réponse validée, le brouillon et le widget si possible."""
     st.session_state.answers[key] = value
     st.session_state.draft_answers[key] = value
     widget_key = f"w_{key}"
@@ -403,7 +411,9 @@ def set_answer_and_draft(key: str, value: Any) -> None:
 def get_draft(key: str) -> Any:
     if f"w_{key}" in st.session_state:
         st.session_state.draft_answers[key] = st.session_state[f"w_{key}"]
-    return st.session_state.draft_answers.get(key, st.session_state.answers.get(key, DEFAULT_ANSWERS.get(key)))
+    return st.session_state.draft_answers.get(
+        key, st.session_state.answers.get(key, DEFAULT_ANSWERS.get(key))
+    )
 
 
 def selected_objectives_from_draft() -> set:
@@ -411,15 +421,17 @@ def selected_objectives_from_draft() -> set:
 
 
 def save_step(step: int) -> Tuple[bool, str]:
-    """Copie les réponses visibles/en cours vers answers. Les résultats utilisent uniquement answers."""
+    """Copie les réponses du brouillon vers answers. Seules answers sont utilisées pour le scoring."""
     keys = STEP_KEYS.get(step, [])
     if step == 1 and not get_draft("objectifs"):
-        return False, "Sélectionne au moins un objectif avant de valider l’étape 1."
+        return False, "Sélectionne au moins un objectif avant de valider l'étape 1."
 
     for key in keys:
         if f"w_{key}" in st.session_state:
             st.session_state.draft_answers[key] = st.session_state[f"w_{key}"]
-        st.session_state.answers[key] = st.session_state.draft_answers.get(key, st.session_state.answers.get(key, DEFAULT_ANSWERS.get(key)))
+        st.session_state.answers[key] = st.session_state.draft_answers.get(
+            key, st.session_state.answers.get(key, DEFAULT_ANSWERS.get(key))
+        )
 
     if step == 1:
         selected = list(st.session_state.answers.get("objectifs") or [])
@@ -427,21 +439,24 @@ def save_step(step: int) -> Tuple[bool, str]:
         draft_weights = st.session_state.draft_answers.get("objective_weights", {}) or {}
         for objective in selected:
             widget_key = f"w_objective_weight_{safe_key(objective)}"
-            weights[objective] = st.session_state.get(widget_key, draft_weights.get(objective, "Important"))
+            weights[objective] = st.session_state.get(
+                widget_key, draft_weights.get(objective, "Important")
+            )
         st.session_state.answers["objective_weights"] = weights
         st.session_state.draft_answers["objective_weights"] = weights
         st.session_state["w_objective_weights"] = weights
 
-    # Nettoyage léger des branches non applicables pour éviter les anciennes réponses parasites.
     a = st.session_state.answers
     objectifs = set(a.get("objectifs") or [])
 
-    if "Transmettre l’entreprise" not in objectifs or int(a.get("nb_enfants") or 0) == 0:
-        for key in ["heritier_repreneur", "autres_heritiers_actifs", "soulte_envisagee", "capacite_financement_soulte", "successeur_prepare", "calendrier_transmission"]:
+    if "Transmettre l'entreprise" not in objectifs or int(a.get("nb_enfants") or 0) == 0:
+        for key in ["heritier_repreneur", "autres_heritiers_actifs", "soulte_envisagee",
+                    "capacite_financement_soulte", "successeur_prepare", "calendrier_transmission"]:
             set_answer_and_draft(key, UNKNOWN)
 
     if a.get("heritier_repreneur") != YES:
-        for key in ["autres_heritiers_actifs", "volonte_non_repreneurs", "soulte_envisagee", "capacite_financement_soulte"]:
+        for key in ["autres_heritiers_actifs", "volonte_non_repreneurs",
+                    "soulte_envisagee", "capacite_financement_soulte"]:
             set_answer_and_draft(key, UNKNOWN)
 
     if a.get("conjoint_present") != YES:
@@ -466,7 +481,8 @@ def save_step(step: int) -> Tuple[bool, str]:
 def yes_no_unknown(label: str, key: str, options: List[str] | None = None, horizontal: bool = True) -> Any:
     sync_widget_from_draft(key)
     opts = options or [UNKNOWN, YES, NO]
-    return st.radio(label, opts, key=f"w_{key}", horizontal=horizontal, on_change=sync_draft_key, args=(key,))
+    return st.radio(label, opts, key=f"w_{key}", horizontal=horizontal,
+                    on_change=sync_draft_key, args=(key,))
 
 
 def number_input(label: str, key: str, **kwargs: Any) -> Any:
@@ -476,16 +492,19 @@ def number_input(label: str, key: str, **kwargs: Any) -> Any:
 
 def slider(label: str, key: str, min_value: int, max_value: int) -> Any:
     sync_widget_from_draft(key)
-    return st.slider(label, min_value, max_value, key=f"w_{key}", on_change=sync_draft_key, args=(key,))
+    return st.slider(label, min_value, max_value, key=f"w_{key}",
+                     on_change=sync_draft_key, args=(key,))
 
 
 def objective_weight_buttons(objective: str) -> None:
-    """Affiche la pondération de l'objectif sous forme de boutons, sans curseur."""
+    """Affiche la pondération de l'objectif sous forme de boutons."""
     key = f"w_objective_weight_{safe_key(objective)}"
     weights = st.session_state.draft_answers.setdefault("objective_weights", {})
     if key not in st.session_state:
-        st.session_state[key] = weights.get(objective, (st.session_state.answers.get("objective_weights", {}) or {}).get(objective, "Important"))
-
+        st.session_state[key] = weights.get(
+            objective,
+            (st.session_state.answers.get("objective_weights", {}) or {}).get(objective, "Important")
+        )
     current = st.session_state.get(key, weights.get(objective, "Important"))
     weights[objective] = current
     st.markdown(f"**{objective}**")
@@ -497,17 +516,22 @@ def objective_weight_buttons(objective: str) -> None:
                 key=f"btn_{key}_{safe_key(option)}",
                 type="primary" if current == option else "secondary",
                 use_container_width=True,
-                help="Sélectionne le niveau d’importance de cet objectif.",
+                help="Sélectionne le niveau d'importance de cet objectif.",
             ):
                 st.session_state[key] = option
                 st.session_state.draft_answers.setdefault("objective_weights", {})[objective] = option
                 st.rerun()
-    st.caption(f"Niveau retenu : {st.session_state.draft_answers.get('objective_weights', {}).get(objective, 'Important')}")
+    st.caption(
+        f"Niveau retenu : "
+        f"{st.session_state.draft_answers.get('objective_weights', {}).get(objective, 'Important')}"
+    )
 
 
 def selectbox(label: str, key: str, options: List[str]) -> Any:
     sync_widget_from_draft(key)
-    current = st.session_state.get(f"w_{key}", st.session_state.draft_answers.get(key, DEFAULT_ANSWERS.get(key)))
+    current = st.session_state.get(
+        f"w_{key}", st.session_state.draft_answers.get(key, DEFAULT_ANSWERS.get(key))
+    )
     if current not in options:
         st.session_state[f"w_{key}"] = options[0] if options else None
         st.session_state.draft_answers[key] = st.session_state[f"w_{key}"]
@@ -516,30 +540,15 @@ def selectbox(label: str, key: str, options: List[str]) -> Any:
 
 def text_input_field(label: str, key: str, placeholder: str = "") -> Any:
     sync_widget_from_draft(key)
-    return st.text_input(label, key=f"w_{key}", placeholder=placeholder, on_change=sync_draft_key, args=(key,))
+    return st.text_input(label, key=f"w_{key}", placeholder=placeholder,
+                         on_change=sync_draft_key, args=(key,))
 
 
 def text_area_field(label: str, key: str, placeholder: str = "", height: int = 90) -> Any:
     sync_widget_from_draft(key)
-    return st.text_area(label, key=f"w_{key}", placeholder=placeholder, height=height, on_change=sync_draft_key, args=(key,))
+    return st.text_area(label, key=f"w_{key}", placeholder=placeholder, height=height,
+                        on_change=sync_draft_key, args=(key,))
 
-
-def validate_buttons(step: int) -> None:
-    """Bouton unique de validation : enregistre l'étape et passe à la suivante."""
-    c1, c2, _ = st.columns([1.1, 2.2, 4.7])
-    with c1:
-        if st.button("← Étape précédente", disabled=step == 1):
-            st.session_state.current_step = max(1, step - 1)
-            st.rerun()
-    with c2:
-        label = "Valider et afficher la synthèse" if step == 5 else "Valider et passer à l’étape suivante"
-        if st.button(label, type="primary"):
-            ok, msg = save_step(step)
-            if ok:
-                st.session_state.current_step = min(6, step + 1)
-                st.rerun()
-            else:
-                st.error(msg)
 
 # =============================================================================
 # 3. Scoring
@@ -557,7 +566,8 @@ def is_known(a: Dict, key: str) -> bool:
     return a.get(key) not in [UNKNOWN, NA, None, ""]
 
 
-def add_points(points: Dict[str, int], evidence: Dict[str, List[str]], risk: str, value: int, reason: str) -> None:
+def add_points(points: Dict[str, int], evidence: Dict[str, List[str]], risk: str,
+               value: int, reason: str) -> None:
     if value <= 0:
         return
     points[risk] += value
@@ -594,1001 +604,738 @@ def calculate_risks(a: Dict) -> Tuple[pd.DataFrame, Dict[str, List[str]]]:
     poids = int(a.get("poids_entreprise") or 0)
     valeur = int(a.get("valeur_entreprise") or 0)
 
-    if not objectifs:
-        return build_df(points, evidence, a)
+    # ── Conserver le contrôle familial ───────────────────────────────────────
+    if "Conserver le contrôle familial" in objectifs:
+        if nb_enfants >= 2:
+            add_points(points, evidence, "dilution", 3,
+                       "Plusieurs héritiers potentiels augmentent le risque de dispersion du capital")
+        if is_no(a, "clauses_entree_sortie"):
+            add_points(points, evidence, "dilution", 2,
+                       "Absence de clauses d'entrée/sortie des titres")
+            add_points(points, evidence, "tiers", 2,
+                       "Pas de clause de préemption ou d'agrément pour bloquer l'entrée de tiers")
+        elif a.get("clauses_entree_sortie") == UNCERTAIN:
+            add_points(points, evidence, "tiers", 1,
+                       "Clauses d'entrée/sortie incertaines")
+        if is_no(a, "gouvernance_formalisee"):
+            add_points(points, evidence, "blocage_gouvernance", 2,
+                       "Gouvernance non formalisée : risque de paralysie décisionnelle")
+        elif a.get("gouvernance_formalisee") == UNCERTAIN:
+            add_points(points, evidence, "blocage_gouvernance", 1,
+                       "Gouvernance de la holding incertaine")
+        if is_yes(a, "associes_actifs_passifs"):
+            add_points(points, evidence, "blocage_gouvernance", 2,
+                       "Présence d'associés actifs et passifs sans règles claires")
+        if is_no(a, "politique_dividendes_definie"):
+            add_points(points, evidence, "blocage_gouvernance", 1,
+                       "Absence de politique de distribution définie")
+        if a.get("famille_recomposee") == YES:
+            add_points(points, evidence, "tiers", 1,
+                       "Famille recomposée : complexité accrue des droits patrimoniaux")
 
-    objectif_controle = "Conserver le contrôle familial" in objectifs
-    objectif_transmission = "Transmettre l’entreprise" in objectifs
-    objectif_equite = "Préserver l’équité entre les héritiers" in objectifs
-    objectif_fiscal = "Optimiser la fiscalité" in objectifs
-    objectif_protection = "Protéger le conjoint et les proches" in objectifs
-    objectif_diversification = "Diversifier le patrimoine" in objectifs
+    # ── Transmettre l'entreprise ──────────────────────────────────────────────
+    if "Transmettre l'entreprise" in objectifs:
+        if nb_enfants == 0:
+            add_points(points, evidence, "successeur", 3,
+                       "Aucun enfant renseigné alors que la transmission est un objectif : "
+                       "successeur non identifié")
+        else:
+            if a.get("heritier_repreneur") == NO:
+                add_points(points, evidence, "successeur", 3,
+                           "Aucun héritier repreneur identifié")
+            elif a.get("heritier_repreneur") == UNCERTAIN:
+                add_points(points, evidence, "successeur", 2,
+                           "Héritier repreneur incertain")
+            if a.get("heritier_repreneur") == YES:
+                if is_no(a, "successeur_prepare"):
+                    add_points(points, evidence, "successeur", 2,
+                               "Le successeur n'est pas encore préparé à reprendre la direction")
+                elif a.get("successeur_prepare") == UNCERTAIN:
+                    add_points(points, evidence, "successeur", 1,
+                               "Préparation du successeur incertaine")
+                if is_no(a, "calendrier_transmission"):
+                    add_points(points, evidence, "successeur", 1,
+                               "Pas de calendrier de transmission du pouvoir")
+        if is_yes(a, "entreprise_dependante_dirigeant"):
+            add_points(points, evidence, "successeur", 2,
+                       "L'entreprise est fortement dépendante du dirigeant actuel")
 
-    # Signaux transversaux liés à la maturité et à la qualité du dossier.
-    if a.get("maturite_projet") == "Transmission urgente":
-        add_points(points, evidence, "successeur", 2, "Projet présenté comme urgent")
-        add_points(points, evidence, "fiscalite", 1, "Urgence pouvant réduire les marges de planification fiscale")
-        add_points(points, evidence, "contestation", 1, "Urgence pouvant limiter la pédagogie familiale")
-        add_points(points, evidence, "suivi", 1, "Projet urgent nécessitant un suivi renforcé")
-    elif a.get("maturite_projet") == "Transmission prévue":
-        add_points(points, evidence, "suivi", 1, "Transmission déjà prévue : nécessité de coordination et de suivi")
+        if nb_enfants >= 2 and a.get("heritier_repreneur") == YES:
+            if is_no(a, "autres_heritiers_actifs"):
+                add_points(points, evidence, "conflit_heritiers", 3,
+                           "Les autres héritiers ne sont pas impliqués dans l'entreprise")
+            if a.get("volonte_non_repreneurs") in ["Sortir du capital", "Incertain / non abordé"]:
+                add_points(points, evidence, "conflit_heritiers", 2,
+                           f"Volonté des non repreneurs : {a.get('volonte_non_repreneurs', '?')}")
+            if a.get("soulte_envisagee") == YES and is_no(a, "capacite_financement_soulte"):
+                add_points(points, evidence, "liquidite", 3,
+                           "Soulte envisagée mais capacité de financement non validée")
+            elif a.get("soulte_envisagee") == YES:
+                add_points(points, evidence, "liquidite", 1,
+                           "Soulte envisagée : vérifier la faisabilité du financement")
+
+        if nb_enfants >= 2 and is_no(a, "dialogue_familial"):
+            add_points(points, evidence, "conflit_heritiers", 2,
+                       "Aucun dialogue familial n'a encore été organisé")
+
+    # ── Optimiser la fiscalité ────────────────────────────────────────────────
+    if "Optimiser la fiscalité" in objectifs:
+        if is_no(a, "simulation_fiscale"):
+            add_points(points, evidence, "fiscalite", 3,
+                       "Aucune simulation fiscale réalisée ou prévue")
+        elif a.get("simulation_fiscale") == UNCERTAIN:
+            add_points(points, evidence, "fiscalite", 1,
+                       "Simulation fiscale prévue mais non encore réalisée")
+        if a.get("pacte_dutreil") == NO:
+            add_points(points, evidence, "dutreil", 1,
+                       "Pacte Dutreil non envisagé malgré l'objectif fiscal")
+        elif a.get("pacte_dutreil") == YES:
+            if a.get("holding_animatrice") in [NO, UNCERTAIN]:
+                add_points(points, evidence, "dutreil", 3,
+                           "Qualification de holding animatrice non établie ou incertaine")
+            if is_no(a, "audit_dutreil"):
+                add_points(points, evidence, "dutreil", 2,
+                           "Aucun audit Dutreil réalisé")
+            if is_no(a, "suivi_engagements"):
+                add_points(points, evidence, "dutreil", 2,
+                           "Pas de suivi des engagements de conservation")
+
+    # ── Protéger le conjoint et les proches ──────────────────────────────────
+    if "Protéger le conjoint et les proches" in objectifs or a.get("conjoint_present") == YES:
+        if a.get("conjoint_present") == YES:
+            if is_yes(a, "conjoint_dependant") and is_no(a, "protection_conjoint_prevue"):
+                add_points(points, evidence, "conjoint", 4,
+                           "Conjoint financièrement dépendant sans dispositif de protection prévu")
+            elif is_yes(a, "conjoint_dependant"):
+                add_points(points, evidence, "conjoint", 2,
+                           "Conjoint financièrement dépendant du dirigeant")
+            elif is_no(a, "protection_conjoint_prevue"):
+                add_points(points, evidence, "conjoint", 2,
+                           "Aucun dispositif de protection du conjoint prévu")
+            if is_no(a, "regime_matrimonial_adapte"):
+                add_points(points, evidence, "conjoint", 1,
+                           "Régime matrimonial non analysé ou non adapté")
+            if a.get("famille_recomposee") == YES:
+                add_points(points, evidence, "conjoint", 1,
+                           "Famille recomposée : droits du conjoint à sécuriser")
+            if a.get("accord_conjoint") == NO:
+                add_points(points, evidence, "conjoint", 2,
+                           "Le conjoint n'adhère pas au projet de transmission")
+            elif a.get("accord_conjoint") == UNCERTAIN:
+                add_points(points, evidence, "conjoint", 1,
+                           "L'adhésion du conjoint au projet est incertaine")
+
+    # ── Préserver l'équité entre les héritiers ───────────────────────────────
+    if "Préserver l'équité entre les héritiers" in objectifs:
+        if nb_enfants >= 2:
+            if is_no(a, "valorisation_independante"):
+                add_points(points, evidence, "contestation", 2,
+                           "Aucune valorisation indépendante des titres prévue")
+            if is_no(a, "audit_civil"):
+                add_points(points, evidence, "contestation", 2,
+                           "Aucun audit civil et successoral réalisé avec le notaire")
+        if a.get("famille_recomposee") == YES:
+            add_points(points, evidence, "contestation", 2,
+                       "Famille recomposée : risque de contestation successorale renforcé")
+            add_points(points, evidence, "conflit_heritiers", 2,
+                       "Famille recomposée : risque de divergence d'intérêts entre héritiers renforcé")
+
+    # ── Diversifier le patrimoine ─────────────────────────────────────────────
+    if "Diversifier le patrimoine" in objectifs or poids >= 40:
+        if poids >= 70:
+            add_points(points, evidence, "dependance", 3,
+                       f"Poids de l'entreprise très élevé ({poids}%) : risque de concentration critique")
+        elif poids >= 40:
+            add_points(points, evidence, "dependance", 2,
+                       f"Poids de l'entreprise élevé ({poids}%) : diversification insuffisante")
+        if is_no(a, "diversification"):
+            add_points(points, evidence, "dependance", 2,
+                       "Aucune diversification patrimoniale organisée")
+        if a.get("actifs_liquides") == "Faible":
+            add_points(points, evidence, "dependance", 1,
+                       "Faible niveau d'actifs liquides hors entreprise")
+        if a.get("endettement_familial") == "Élevé":
+            add_points(points, evidence, "dependance", 1,
+                       "Endettement familial élevé")
+        if is_no(a, "prevoyance"):
+            add_points(points, evidence, "dependance", 1,
+                       "Pas de prévoyance ou assurance décès prévue")
+        if a.get("besoin_revenus_famille") == "Élevé":
+            add_points(points, evidence, "liquidite", 2,
+                       "Besoin de revenus réguliers élevé : risque de pression sur les dividendes")
+        elif a.get("besoin_revenus_famille") == "Moyen":
+            add_points(points, evidence, "liquidite", 1,
+                       "Besoin de revenus réguliers moyen à surveiller")
+
+    # ── Règles transversales ──────────────────────────────────────────────────
+    if a.get("urgence_evenement") == YES:
+        for risk in ["successeur", "fiscalite", "conjoint"]:
+            add_points(points, evidence, risk, 1,
+                       "Événement d'urgence ou de fragilité signalé")
 
     if a.get("delai_transmission") == "Moins de 12 mois":
-        add_points(points, evidence, "successeur", 2, "Horizon de transmission inférieur à 12 mois")
-        add_points(points, evidence, "fiscalite", 1, "Horizon court pour organiser l’optimisation fiscale")
-        add_points(points, evidence, "liquidite", 1, "Horizon court pour organiser les besoins de liquidité")
-    elif a.get("delai_transmission") == "1 à 3 ans":
-        add_points(points, evidence, "suivi", 1, "Transmission envisagée à moyen terme : suivi de trajectoire nécessaire")
+        add_points(points, evidence, "fiscalite", 1,
+                   "Horizon de transmission inférieur à 12 mois : peu de temps pour optimiser")
+        add_points(points, evidence, "successeur", 1,
+                   "Transmission imminente : préparer rapidement le successeur")
 
-    if is_yes(a, "urgence_evenement"):
-        add_points(points, evidence, "successeur", 2, "Événement d’urgence ou de fragilité signalé")
-        add_points(points, evidence, "conjoint", 2, "Événement de fragilité pouvant affecter les proches")
-        add_points(points, evidence, "liquidite", 1, "Événement de fragilité pouvant créer un besoin de liquidité rapide")
-        add_points(points, evidence, "suivi", 1, "Événement de fragilité imposant une coordination rapide")
+    if is_no(a, "suivi_annuel"):
+        add_points(points, evidence, "suivi", 2,
+                   "Pas de revue annuelle de la stratégie patrimoniale prévue")
+    if is_no(a, "formalisation_rapport"):
+        add_points(points, evidence, "suivi", 1,
+                   "Pas de rapport écrit de diagnostic prévu")
 
-    if a.get("qualite_information") == "À vérifier":
-        add_points(points, evidence, "suivi", 2, "Qualité de l’information à vérifier avant recommandation")
-    elif a.get("qualite_information") == "Partiellement confirmées":
-        add_points(points, evidence, "suivi", 1, "Informations partiellement confirmées")
+    if a.get("famille_recomposee") == YES:
+        if "Préserver l'équité entre les héritiers" not in objectifs:
+            add_points(points, evidence, "contestation", 1,
+                       "Famille recomposée : risque successoral à ne pas négliger hors objectif déclaré")
+        if "Protéger le conjoint et les proches" not in objectifs:
+            add_points(points, evidence, "conjoint", 1,
+                       "Famille recomposée : droits du conjoint à vérifier")
 
-    if objectif_controle:
-        add_points(points, evidence, "dilution", 1, "Objectif déclaré de conservation du contrôle familial")
-        add_points(points, evidence, "tiers", 1, "Objectif déclaré de protection du capital familial")
-        if nb_enfants >= 2:
-            add_points(points, evidence, "dilution", 2, "Présence de plusieurs héritiers")
-        if nb_enfants >= 3:
-            add_points(points, evidence, "dilution", 1, "Nombre élevé d’héritiers")
-        if is_no(a, "clauses_entree_sortie"):
-            add_points(points, evidence, "dilution", 2, "Absence de clauses d’entrée/sortie alors que le contrôle est recherché")
-            add_points(points, evidence, "tiers", 3, "Absence de clause d’agrément ou de préemption identifiée")
-
-    if is_yes(a, "associes_actifs_passifs"):
-        add_points(points, evidence, "blocage_gouvernance", 3, "Coexistence d’associés actifs et passifs")
-        if is_no(a, "politique_dividendes_definie"):
-            add_points(points, evidence, "blocage_gouvernance", 2, "Politique de dividendes non définie malgré la présence d’associés actifs et passifs")
-            add_points(points, evidence, "liquidite", 1, "Absence de politique de distribution pour les associés non actifs")
-    if is_no(a, "gouvernance_formalisee") and (objectif_controle or nb_enfants >= 2):
-        add_points(points, evidence, "blocage_gouvernance", 3, "Gouvernance insuffisamment formalisée")
-    if is_no(a, "dialogue_familial") and nb_enfants >= 2:
-        add_points(points, evidence, "blocage_gouvernance", 1, "Dialogue familial non organisé")
-        add_points(points, evidence, "conflit_heritiers", 1, "Dialogue familial non organisé")
-
-    if is_yes(a, "entreprise_dependante_dirigeant"):
-        add_points(points, evidence, "successeur", 3, "Entreprise fortement dépendante du dirigeant actuel")
-        add_points(points, evidence, "dependance", 1, "Dépendance opérationnelle au dirigeant")
-
-    if objectif_transmission:
-        if a.get("heritier_repreneur") == NO:
-            add_points(points, evidence, "successeur", 4, "Aucun héritier repreneur identifié malgré l’objectif de transmission")
-        elif a.get("heritier_repreneur") == UNCERTAIN:
-            add_points(points, evidence, "successeur", 3, "Successeur familial incertain")
-        elif a.get("heritier_repreneur") == YES:
-            if is_no(a, "successeur_prepare"):
-                add_points(points, evidence, "successeur", 3, "Successeur identifié mais préparation insuffisante")
-            if is_no(a, "calendrier_transmission"):
-                add_points(points, evidence, "successeur", 2, "Absence de calendrier de transmission du pouvoir")
-
-    if objectif_equite or objectif_transmission:
-        if a.get("heritier_repreneur") == YES and nb_enfants >= 2:
-            add_points(points, evidence, "conflit_heritiers", 3, "Un enfant reprend alors que plusieurs héritiers existent")
-            add_points(points, evidence, "liquidite", 1, "Compensation éventuelle des autres héritiers à organiser")
-            if is_no(a, "autres_heritiers_actifs"):
-                add_points(points, evidence, "conflit_heritiers", 3, "Les autres héritiers ne sont pas impliqués dans l’entreprise")
-            if a.get("volonte_non_repreneurs") in ["Sortir du capital", "Recevoir principalement une compensation"]:
-                add_points(points, evidence, "liquidite", 2, "Les héritiers non repreneurs souhaitent une sortie ou une compensation")
-                add_points(points, evidence, "conflit_heritiers", 1, "Attente de sortie ou de compensation des non repreneurs")
-            elif a.get("volonte_non_repreneurs") == "Incertain / non abordé":
-                add_points(points, evidence, "conflit_heritiers", 2, "Volonté des héritiers non repreneurs non clarifiée")
-                add_points(points, evidence, "liquidite", 1, "Sortie ou compensation des héritiers non repreneurs non clarifiée")
-        if is_yes(a, "soulte_envisagee"):
-            add_points(points, evidence, "liquidite", 1, "Soulte envisagée : besoin de financement à vérifier")
-            if is_no(a, "capacite_financement_soulte"):
-                add_points(points, evidence, "liquidite", 4, "Soulte envisagée mais capacité de financement non validée")
-                add_points(points, evidence, "conflit_heritiers", 1, "Soulte potentiellement difficile à financer")
-        if is_no(a, "valorisation_independante") and (valeur >= 500_000 or nb_enfants >= 2):
-            add_points(points, evidence, "contestation", 3, "Absence de valorisation indépendante")
-            add_points(points, evidence, "conflit_heritiers", 1, "Valorisation susceptible d’être discutée")
-        if is_yes(a, "famille_recomposee"):
-            add_points(points, evidence, "contestation", 2, "Famille recomposée : droits et attentes potentiellement divergents")
-            add_points(points, evidence, "conjoint", 2, "Famille recomposée : vigilance renforcée sur le conjoint")
-        if is_yes(a, "conjoint_present") and a.get("accord_conjoint") in [NO, UNCERTAIN]:
-            add_points(points, evidence, "conjoint", 2, "Accord du conjoint absent ou incertain")
-            add_points(points, evidence, "contestation", 1, "Adhésion du conjoint non sécurisée")
-        if is_no(a, "audit_civil") and (nb_enfants >= 2 or is_yes(a, "famille_recomposee") or is_yes(a, "conjoint_present")):
-            add_points(points, evidence, "contestation", 2, "Aucun audit civil ou successoral réalisé")
-
-    if objectif_fiscal:
-        add_points(points, evidence, "fiscalite", 2, "Objectif déclaré d’optimisation fiscale")
-        if valeur >= 3_000_000:
-            add_points(points, evidence, "fiscalite", 2, "Valeur d’entreprise élevée")
-        elif valeur >= 1_000_000:
-            add_points(points, evidence, "fiscalite", 1, "Valeur d’entreprise significative")
-        if is_no(a, "simulation_fiscale"):
-            add_points(points, evidence, "fiscalite", 2, "Aucune simulation fiscale préalable")
-    elif objectif_transmission and valeur >= 3_000_000:
-        add_points(points, evidence, "fiscalite", 1, "Valeur élevée dans un contexte de transmission")
-
-    if a.get("pacte_dutreil") == YES:
-        add_points(points, evidence, "dutreil", 2, "Pacte Dutreil envisagé")
-        if a.get("holding_animatrice") == UNCERTAIN:
-            add_points(points, evidence, "dutreil", 4, "Qualification de holding animatrice incertaine")
-        elif a.get("holding_animatrice") == NO:
-            add_points(points, evidence, "dutreil", 3, "Holding déclarée non animatrice")
-        if is_no(a, "audit_dutreil"):
-            add_points(points, evidence, "dutreil", 2, "Audit Dutreil non réalisé")
-        if is_no(a, "suivi_engagements"):
-            add_points(points, evidence, "dutreil", 3, "Suivi des engagements Dutreil non prévu")
-
-    # Protection familiale : les réponses sont prises en compte dès qu’un conjoint est présent.
-    # La pondération est renforcée si l’objectif « protéger le conjoint et les proches » est explicitement retenu.
-    if is_yes(a, "conjoint_present"):
-        bonus_protection = 1 if objectif_protection else 0
-        if is_yes(a, "conjoint_dependant"):
-            add_points(points, evidence, "conjoint", 2 + bonus_protection, "Conjoint financièrement dépendant")
-        if is_no(a, "protection_conjoint_prevue"):
-            add_points(points, evidence, "conjoint", 2 + bonus_protection, "Protection du conjoint non prévue")
-        if is_no(a, "regime_matrimonial_adapte"):
-            add_points(points, evidence, "conjoint", 1 + bonus_protection, "Régime matrimonial non analysé ou non adapté")
-
-    if poids >= 60:
-        add_points(points, evidence, "dependance", 4, "Entreprise représentant au moins 60 % du patrimoine")
-        add_points(points, evidence, "liquidite", 3, "Patrimoine fortement concentré dans l’entreprise")
-    elif poids >= 40:
-        add_points(points, evidence, "dependance", 2, "Entreprise représentant au moins 40 % du patrimoine")
-        add_points(points, evidence, "liquidite", 1, "Liquidité potentielle à vérifier")
-
-    if a.get("actifs_liquides") == "Faible":
-        add_points(points, evidence, "liquidite", 3, "Actifs liquides faibles hors entreprise")
-        add_points(points, evidence, "dependance", 2, "Patrimoine liquide ou diversifié insuffisant")
-        if is_yes(a, "conjoint_present"):
-            add_points(points, evidence, "conjoint", 1, "Faibles liquidités disponibles pour sécuriser les proches")
-    elif a.get("actifs_liquides") == "Moyen":
-        add_points(points, evidence, "liquidite", 1, "Actifs liquides moyens : simulation à confirmer")
-
-    if a.get("endettement_familial") == "Élevé":
-        add_points(points, evidence, "liquidite", 2, "Endettement personnel ou familial élevé")
-        add_points(points, evidence, "conjoint", 1, "Endettement pouvant fragiliser les proches")
-    elif a.get("endettement_familial") == "Moyen":
-        add_points(points, evidence, "liquidite", 1, "Endettement familial à surveiller")
-
-    # Besoin de revenus : signal transversal important.
-    # Il influence la liquidité, la protection familiale, la gouvernance et la dépendance au patrimoine professionnel.
-    if a.get("besoin_revenus_famille") == "Élevé":
-        add_points(points, evidence, "liquidite", 3, "Besoin de revenus réguliers élevé : pression potentielle sur la trésorerie et les distributions")
-        add_points(points, evidence, "blocage_gouvernance", 1, "Besoin de revenus pouvant générer des divergences sur les dividendes")
-        if is_yes(a, "conjoint_present") or objectif_protection:
-            add_points(points, evidence, "conjoint", 2, "Besoin de revenus élevé pour sécuriser le conjoint ou les proches")
-        else:
-            add_points(points, evidence, "conjoint", 1, "Besoin de revenus familial à analyser même hors objectif explicite de protection")
-        if poids >= 40 or a.get("actifs_liquides") in ["Faible", "Moyen"]:
-            add_points(points, evidence, "dependance", 1, "Besoin de revenus renforçant la dépendance au patrimoine professionnel")
-        if a.get("actifs_liquides") == "Faible":
-            add_points(points, evidence, "liquidite", 1, "Besoin de revenus élevé combiné à de faibles liquidités")
-        if is_no(a, "politique_dividendes_definie"):
-            add_points(points, evidence, "blocage_gouvernance", 2, "Besoin de revenus élevé sans politique de distribution définie")
-            add_points(points, evidence, "liquidite", 1, "Politique de distribution à définir pour répondre aux besoins de revenus")
-        elif a.get("politique_dividendes_definie") == UNKNOWN:
-            add_points(points, evidence, "blocage_gouvernance", 1, "Politique de distribution non renseignée malgré un besoin de revenus élevé")
-    elif a.get("besoin_revenus_famille") == "Moyen":
-        add_points(points, evidence, "liquidite", 1, "Besoin de revenus familiaux à intégrer")
-        if is_yes(a, "conjoint_present") or objectif_protection:
-            add_points(points, evidence, "conjoint", 1, "Besoin de revenus moyen à intégrer dans la protection familiale")
-        if is_no(a, "politique_dividendes_definie"):
-            add_points(points, evidence, "blocage_gouvernance", 1, "Besoin de revenus moyen sans politique de distribution définie")
-
-    if is_no(a, "diversification") and (objectif_diversification or poids >= 40):
-        add_points(points, evidence, "dependance", 2, "Diversification patrimoniale insuffisante")
-    if is_no(a, "prevoyance") and is_yes(a, "conjoint_present"):
-        add_points(points, evidence, "conjoint", 1, "Prévoyance non identifiée")
-        add_points(points, evidence, "dependance", 1, "Absence de mécanisme assurantiel de protection")
-
-    if objectifs:
-        if is_no(a, "suivi_annuel"):
-            add_points(points, evidence, "suivi", 3, "Aucun rendez-vous de suivi annuel prévu")
-        if a.get("pacte_dutreil") == YES and is_no(a, "suivi_engagements"):
-            add_points(points, evidence, "suivi", 2, "Engagements fiscaux sans processus de suivi")
-        if is_no(a, "formalisation_rapport"):
-            add_points(points, evidence, "suivi", 2, "Absence de rapport écrit prévu")
+    # Valeur >= 5M€ — signaux autonomes
+    if valeur >= 5_000_000:
+        add_points(points, evidence, "fiscalite", 1,
+                   f"Valeur élevée ({valeur/1e6:.1f}M€) : enjeu fiscal même hors objectif déclaré")
+        if a.get("pacte_dutreil") != YES:
+            add_points(points, evidence, "dutreil", 1,
+                       f"Valeur >= 5M€ : le Pacte Dutreil mérite d'être examiné")
+        add_points(points, evidence, "contestation", 1,
+                   f"Valeur >= 5M€ : risque de contestation accru par l'importance des enjeux")
 
     return build_df(points, evidence, a)
 
 
-def build_df(points: Dict[str, int], evidence: Dict[str, List[str]], answers: Dict[str, Any] | None = None) -> Tuple[pd.DataFrame, Dict[str, List[str]]]:
+def build_df(points: Dict[str, int], evidence: Dict[str, List[str]], answers: Dict | None = None) -> Tuple[pd.DataFrame, Dict]:
     rows = []
     for code, definition in RISK_DEFINITIONS.items():
-        raw_prob = points.get(code, 0)
-        weight_label, weight_factor = weight_for_risk(code, answers)
-        prob = clamp(math.ceil(raw_prob * weight_factor)) if raw_prob > 0 else 0
-        grav = definition.gravite_base if prob > 0 else 0
-        score = prob * grav if prob > 0 else 0
-        niv = niveau(score)
+        raw_prob = clamp(points.get(code, 0))
+        weight_label, factor = weight_for_risk(code, answers)
+        weighted_prob = raw_prob * factor
+        grav = definition.gravite_base
+        score = round(weighted_prob * grav, 1)
+        niv = niveau(int(score))
         rows.append({
             "Code": code,
             "Objectif": definition.objectif,
             "Risque": definition.libelle,
-            "Probabilité": prob,
+            "Probabilité": raw_prob,
             "Gravité": grav,
             "Score": score,
             "Niveau": niv,
-            "Pondération objectif": weight_label if raw_prob > 0 else "Non applicable",
-            "Points bruts": raw_prob,
-            "Facteur de pondération": weight_factor if raw_prob > 0 else 0,
-            "Signaux retenus": " | ".join(evidence.get(code, [])) if evidence.get(code) else "Aucun signal détecté : risque inexistant au vu des réponses validées.",
-            "Outils à étudier": ", ".join(definition.outils) if prob > 0 else "Aucun outil spécifique à ce stade",
-            "Justification des outils": tool_justifications_text(code) if prob > 0 else "Aucune justification : risque inexistant au vu des réponses validées.",
-            "Actions préventives": ", ".join(definition.actions_preventives) if prob > 0 else "Aucune action prioritaire à ce stade",
-            "Professionnels": ", ".join(definition.professionnels) if prob > 0 else "Non prioritaire",
-            "Rang": PRIORITY_ORDER[niv],
+            "Pondération objectif": weight_label,
+            "Outils à étudier": ", ".join(definition.outils),
+            "Actions préventives": ", ".join(definition.actions_preventives),
+            "Professionnels": ", ".join(definition.professionnels),
+            "Signaux retenus": "\n".join(evidence.get(code, [])),
         })
-    return pd.DataFrame(rows).sort_values(["Rang", "Score", "Gravité", "Risque"], ascending=[False, False, False, True]).reset_index(drop=True), evidence
+    df = pd.DataFrame(rows)
+    df = df.sort_values(["Score", "Probabilité", "Gravité"], ascending=False).reset_index(drop=True)
+    return df, evidence
 
 
 def missing_data(a: Dict) -> List[str]:
-    missing: List[str] = []
+    gaps: List[str] = []
     objectifs = set(a.get("objectifs") or [])
     if not objectifs:
-        missing.append("Aucun objectif n’a encore été validé.")
-    if not is_known(a, "maturite_projet"):
-        missing.append("Préciser le niveau de maturité du projet.")
-    if not is_known(a, "delai_transmission"):
-        missing.append("Préciser l’horizon de transmission envisagé.")
-    if not is_known(a, "qualite_information"):
-        missing.append("Qualifier le niveau de fiabilité des informations recueillies.")
-    if "Transmettre l’entreprise" in objectifs and int(a.get("nb_enfants") or 0) > 0 and not is_known(a, "heritier_repreneur"):
-        missing.append("Indiquer si un héritier repreneur est identifié.")
-    if a.get("heritier_repreneur") == YES and int(a.get("nb_enfants") or 0) >= 2 and not is_known(a, "volonte_non_repreneurs"):
-        missing.append("Préciser la volonté probable des héritiers non repreneurs.")
-    if "Protéger le conjoint et les proches" in objectifs and is_yes(a, "conjoint_present"):
-        for k, label in [("conjoint_dependant", "dépendance financière du conjoint"), ("protection_conjoint_prevue", "protection déjà prévue"), ("regime_matrimonial_adapte", "analyse du régime matrimonial"), ("accord_conjoint", "adhésion du conjoint au projet")]:
-            if not is_known(a, k):
-                missing.append(f"Préciser la {label}.")
-    if "Optimiser la fiscalité" in objectifs and not is_known(a, "simulation_fiscale"):
-        missing.append("Préciser si une simulation fiscale a été réalisée.")
-    if not is_known(a, "endettement_familial"):
-        missing.append("Préciser le niveau d’endettement personnel ou familial.")
-    if not is_known(a, "besoin_revenus_famille"):
-        missing.append("Préciser le besoin de revenus réguliers pour la famille.")
-    if a.get("besoin_revenus_famille") in ["Moyen", "Élevé"] and not is_known(a, "politique_dividendes_definie"):
-        missing.append("Préciser si une politique de distribution de dividendes est définie, car le besoin de revenus est significatif.")
-    if a.get("besoin_revenus_famille") in ["Moyen", "Élevé"] and not is_known(a, "prevoyance"):
-        missing.append("Préciser l’existence d’une prévoyance ou assurance décès, car le besoin de revenus est significatif.")
-    if not is_known(a, "entreprise_dependante_dirigeant"):
-        missing.append("Préciser si l’entreprise dépend fortement du dirigeant actuel.")
-    return missing
+        gaps.append("Aucun objectif sélectionné — le scoring ne peut pas s'activer.")
+        return gaps
+    if not a.get("client_name"):
+        gaps.append("Nom du client non renseigné.")
+    if a.get("nb_enfants") in [UNKNOWN, None]:
+        gaps.append("Nombre d'enfants non renseigné.")
+    if "Transmettre l'entreprise" in objectifs and a.get("heritier_repreneur") == UNKNOWN:
+        gaps.append("Présence d'un repreneur non renseignée (objectif transmission sélectionné).")
+    if a.get("conjoint_present") == UNKNOWN:
+        gaps.append("Présence d'un conjoint non renseignée.")
+    if int(a.get("valeur_entreprise") or 0) == 0:
+        gaps.append("Valeur de l'entreprise non renseignée (scoring fiscal et liquidité imprécis).")
+    if int(a.get("poids_entreprise") or 0) == 0 and "Diversifier le patrimoine" in objectifs:
+        gaps.append("Poids de l'entreprise dans le patrimoine non renseigné.")
+    if "Optimiser la fiscalité" in objectifs and a.get("simulation_fiscale") == UNKNOWN:
+        gaps.append("Simulation fiscale non renseignée.")
+    if a.get("pacte_dutreil") == YES and a.get("holding_animatrice") == UNKNOWN:
+        gaps.append("Qualification de holding animatrice non renseignée (Pacte Dutreil en cours).")
+    return gaps
+
 
 # =============================================================================
-# 4. Affichage
+# 4. Helpers d'affichage (HTML, cartes)
 # =============================================================================
+
+def priority_badge(level: str) -> str:
+    color = PRIORITY_COLORS.get(level, "#6b7280")
+    return f'<span class="badge" style="background:{color}">{level}</span>'
+
+
+def card(title: str, body: str, accent: str = "#0ea5e9") -> None:
+    st.markdown(
+        f'<div class="card" style="border-left:5px solid {accent}">'
+        f'<h3 style="color:{accent}!important">{title}</h3>'
+        f'{body}'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
 
 def render_list(items: List[str]) -> str:
     if not items:
-        return "<p class='small-note'>Aucun élément.</p>"
-    return "<ul>" + "".join(f"<li>{item}</li>" for item in items) + "</ul>"
+        return "<p><em>—</em></p>"
+    li = "".join(f"<li>{item}</li>" for item in items)
+    return f"<ul>{li}</ul>"
 
 
-def get_tool_justifications(risk_code: str) -> Dict[str, str]:
-    """Renvoie les justifications pédagogiques des outils associés à un risque."""
-    definition = RISK_DEFINITIONS[risk_code]
-    specific = TOOL_JUSTIFICATIONS_BY_RISK.get(risk_code, {})
-    return {
-        tool: specific.get(
-            tool,
-            f"Cet outil est proposé car il constitue une piste d’analyse pertinente pour réduire le risque « {definition.libelle} »."
-        )
-        for tool in definition.outils
-    }
+# =============================================================================
+# 5. Justifications des outils
+# =============================================================================
+
+_TOOL_JUSTIFICATIONS: Dict[str, Dict[str, str]] = {
+    "dilution": {
+        "Holding familiale": "Regroupe les titres dans une structure commune, permettant de centraliser le contrôle et d'organiser la transmission par étapes.",
+        "Clause d'agrément": "Soumet toute cession de titres à l'accord préalable des associés pour éviter la dilution involontaire.",
+        "Clause de préemption": "Donne aux associés existants la priorité pour racheter les titres mis en vente.",
+        "Actions de préférence": "Permettent de dissocier droits économiques et droits de vote pour préserver le contrôle.",
+        "Pacte d'associés": "Organise les relations entre associés, la gouvernance et les règles de cession dans un document contractuel.",
+    },
+    "tiers": {
+        "Clause d'agrément": "Outil central pour soumettre toute entrée d'un tiers à l'approbation des associés.",
+        "Clause de préemption": "Droit de rachat prioritaire permettant de bloquer la sortie vers un tiers non souhaité.",
+        "Pacte d'associés": "Précise l'ensemble des règles d'entrée et de sortie pour sécuriser le capital familial.",
+        "Statuts adaptés": "Les statuts de SAS offrent une grande flexibilité pour verrouiller la gouvernance.",
+    },
+    "blocage_gouvernance": {
+        "Pacte d'associés": "Document clé pour définir les règles de majorité, de blocage et de sortie entre associés.",
+        "Charte familiale": "Engage la famille autour de valeurs communes et de règles de gouvernance non juridiques.",
+        "Conseil de famille": "Instance de dialogue régulière entre membres de la famille actionnaire.",
+        "Comité stratégique": "Structure associant les non-actifs aux décisions importantes sans droit de vote.",
+        "Statuts de SAS": "Structure très flexible permettant d'organiser la gouvernance sur mesure.",
+    },
+    "successeur": {
+        "Gouvernance transitoire": "Assure la continuité opérationnelle pendant la phase de transmission progressive.",
+        "Direction externe temporaire": "Pallie l'absence de successeur identifié ou préparé.",
+        "Actions de préférence": "Permettent de séparer le contrôle opérationnel de la propriété économique.",
+        "Pacte d'associés": "Organise la transmission progressive des pouvoirs et les droits du successeur.",
+        "Calendrier de transmission": "Outil de planification pour anticiper et formaliser les étapes clés.",
+    },
+    "conflit_heritiers": {
+        "Donation-partage": "Acte notarié permettant de répartir les biens de son vivant, avec accord des parties.",
+        "Soulte": "Compensation financière versée aux héritiers qui ne reprennent pas l'entreprise.",
+        "Pacte d'associés": "Encadre les droits et devoirs des associés repreneurs et non repreneurs.",
+        "Mécanisme de sortie": "Organise la liquidité des non repreneurs pour éviter tout blocage.",
+        "Droits financiers différenciés": "Permettent de distinguer droits de vote et droits aux dividendes selon le rôle.",
+    },
+    "contestation": {
+        "Donation-partage": "Cristallise la valeur au moment de la donation, réduisant les risques de requalification.",
+        "Audit civil": "Analyse des droits successoraux pour identifier en amont les risques de contestation.",
+        "Valorisation indépendante": "Expertise indépendante de la valeur des titres pour éviter les litiges sur l'évaluation.",
+        "Démembrement": "Technique permettant de transmettre la nue-propriété en conservant l'usufruit.",
+        "Testament": "Acte formel exprimant la volonté du testateur et réduisant les ambiguïtés successorales.",
+    },
+    "liquidite": {
+        "Soulte échelonnée": "Paiement de la compensation en plusieurs fois pour alléger la trésorerie du repreneur.",
+        "Family Buy-Out": "Rachat de l'entreprise par la famille, structuré avec un effet de levier financier.",
+        "Paiement différé/fractionné": "Option légale permettant d'étaler les droits de mutation dans le temps.",
+        "Assurance-vie": "Instrument de liquidité disponible pour financer soultes ou droits de succession.",
+        "Politique de distribution encadrée": "Définit les règles de dividendes pour assurer la liquidité des associés non actifs.",
+    },
+    "fiscalite": {
+        "Pacte Dutreil": "Dispositif central permettant une réduction de 75% de la base taxable lors de la transmission.",
+        "Donation anticipée": "Transmettre de son vivant, profitant des abattements et d'une valorisation possiblement plus basse.",
+        "Démembrement": "Sépare usufruit et nue-propriété, réduisant la valeur imposable transmise.",
+        "Paiement différé et fractionné": "Permet d'étaler le paiement des droits de mutation sur plusieurs années.",
+    },
+    "dutreil": {
+        "Audit Dutreil": "Vérifie la conformité aux conditions légales du Pacte Dutreil avant et pendant sa durée.",
+        "Documentation holding animatrice": "Établit et documente la qualification de holding animatrice, condition essentielle.",
+        "Suivi des engagements": "Contrôle annuel du respect des engagements de conservation des titres.",
+        "Revue juridique annuelle": "Assure le maintien des conditions d'éligibilité au fil du temps et des évolutions législatives.",
+    },
+    "conjoint": {
+        "Assurance-vie": "Outil de protection du conjoint survivant et d'optimisation successorale.",
+        "Régime matrimonial adapté": "Ajuster le contrat de mariage pour mieux protéger les droits patrimoniaux du conjoint.",
+        "Donation au dernier vivant": "Avantage le conjoint survivant au-delà des droits légaux minimaux.",
+        "SCI familiale": "Permet de transmettre le patrimoine immobilier en protégeant le logement familial.",
+        "Mandat de protection future": "Anticipe une éventuelle incapacité du dirigeant et protège le conjoint.",
+    },
+    "dependance": {
+        "Immobilier locatif": "Diversification patrimoniale classique générant des revenus réguliers.",
+        "Contrats d'assurance-vie": "Outil de diversification liquide, fiscalement avantageux, hors succession.",
+        "SCPI/OPCI": "Investissement immobilier mutualisé sans contrainte de gestion directe.",
+        "Prévoyance dirigeant": "Assurance couvrant les risques décès, invalidité et incapacité du dirigeant.",
+        "Plan d'épargne retraite": "Diversification vers des actifs financiers avec avantage fiscal à l'entrée.",
+    },
+    "suivi": {
+        "Tableau de bord patrimonial": "Suivi annuel structuré de l'évolution du patrimoine et des risques identifiés.",
+        "Revue juridique annuelle": "Vérification annuelle de la conformité des dispositifs mis en place.",
+        "Rapport de diagnostic CGP": "Document de synthèse annuel remis au client pour formaliser les recommandations.",
+        "Réunion annuelle associés": "Instance de gouvernance régulière pour maintenir le dialogue et la cohésion familiale.",
+    },
+}
 
 
-def render_tool_justifications(risk_code: str) -> str:
-    justifications = get_tool_justifications(risk_code)
+def get_tool_justifications(code: str) -> Dict[str, str]:
+    return _TOOL_JUSTIFICATIONS.get(code, {})
+
+
+def render_tool_justifications(code: str) -> str:
+    justifications = get_tool_justifications(code)
     if not justifications:
-        return "<p class='small-note'>Aucune justification disponible.</p>"
+        return "<p><em>Justifications non disponibles.</em></p>"
     rows = "".join(
-        f"<tr><td><strong>{tool}</strong></td><td>{why}</td></tr>"
-        for tool, why in justifications.items()
+        f"<tr><td><strong>{tool}</strong></td><td>{just}</td></tr>"
+        for tool, just in justifications.items()
     )
-    return f"""
-    <table class="justification-table">
-        <thead><tr><th>Outil proposé</th><th>Pourquoi cet outil est proposé</th></tr></thead>
-        <tbody>{rows}</tbody>
-    </table>
-    """
+    return (
+        f'<table class="justification-table"><thead>'
+        f"<tr><th>Outil</th><th>Pourquoi cet outil</th></tr>"
+        f"</thead><tbody>{rows}</tbody></table>"
+    )
 
 
-def tool_justifications_text(risk_code: str) -> str:
-    return " | ".join(f"{tool} : {why}" for tool, why in get_tool_justifications(risk_code).items())
-
-
-def priority_badge(priority: str) -> str:
-    color = PRIORITY_COLORS.get(priority, "#374151")
-    return f"<span class='badge' style='background:{color}'>{priority}</span>"
-
-
-def card(title: str, body: str, accent: str = "#0f4c81") -> None:
-    st.markdown(f"""
-    <div class="card" style="border-left: 6px solid {accent};">
-        <h3>{title}</h3>
-        <div>{body}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
+# =============================================================================
+# 6. Plan d'action
+# =============================================================================
 
 def build_action_plan(df: pd.DataFrame) -> pd.DataFrame:
-    """Construit un plan d'action en trois temps à partir des risques détectés."""
-    rows: List[Dict[str, str]] = []
-    detected = df[df["Score"] > 0].copy()
-    for _, row in detected.iterrows():
-        definition = RISK_DEFINITIONS[row["Code"]]
-        risk_name = definition.libelle
-        level = row["Niveau"]
-        if level in ["Critique", "Élevé"]:
+    """Génère un plan d'action priorisé depuis le DataFrame des risques."""
+    if df.empty:
+        return pd.DataFrame(
+            columns=["Horizon", "Priorité", "Action", "Risques concernés", "Professionnels"]
+        )
+
+    rows = []
+
+    def _add_group(horizon: str, niveaux: List[str]) -> None:
+        seen: Dict[str, Dict] = {}
+        sub = df[df["Niveau"].isin(niveaux)].copy()
+        for _, row in sub.iterrows():
+            definition = RISK_DEFINITIONS[row["Code"]]
+            for action in definition.actions_preventives[:2]:
+                key = action[:60]
+                if key not in seen:
+                    seen[key] = {
+                        "Horizon": horizon,
+                        "Priorité": row["Niveau"],
+                        "Action": action,
+                        "Risques": [definition.libelle],
+                        "Pros": list(definition.professionnels),
+                    }
+                else:
+                    if definition.libelle not in seen[key]["Risques"]:
+                        seen[key]["Risques"].append(definition.libelle)
+                    for p in definition.professionnels:
+                        if p not in seen[key]["Pros"]:
+                            seen[key]["Pros"].append(p)
+        for ag in seen.values():
             rows.append({
-                "Horizon": "Actions immédiates",
-                "Priorité": level,
-                "Action": f"Traiter en priorité le risque « {risk_name} » : {definition.actions_preventives[0]}.",
-                "Risques concernés": risk_name,
-                "Professionnels": ", ".join(definition.professionnels),
-            })
-            if row["Code"] in ["dutreil", "fiscalite", "contestation"]:
-                rows.append({
-                    "Horizon": "Actions immédiates",
-                    "Priorité": level,
-                    "Action": "Organiser un audit technique avec les professionnels compétents avant toute mise en œuvre.",
-                    "Risques concernés": risk_name,
-                    "Professionnels": ", ".join(definition.professionnels),
-                })
-        if level in ["Critique", "Élevé", "Moyen"]:
-            rows.append({
-                "Horizon": "Actions à moyen terme",
-                "Priorité": level,
-                "Action": f"Étudier et arbitrer les outils suivants : {', '.join(definition.outils[:4])}.",
-                "Risques concernés": risk_name,
-                "Professionnels": ", ".join(definition.professionnels),
-            })
-            if len(definition.actions_preventives) > 1:
-                rows.append({
-                    "Horizon": "Actions à moyen terme",
-                    "Priorité": level,
-                    "Action": definition.actions_preventives[1],
-                    "Risques concernés": risk_name,
-                    "Professionnels": ", ".join(definition.professionnels),
-                })
-        if level in ["Critique", "Élevé", "Moyen", "Faible"]:
-            rows.append({
-                "Horizon": "Suivi annuel",
-                "Priorité": level,
-                "Action": "Réévaluer le risque, vérifier l’adéquation des outils et actualiser la stratégie si la situation familiale, patrimoniale ou fiscale évolue.",
-                "Risques concernés": risk_name,
-                "Professionnels": "CGP, puis professionnels spécialisés selon le risque",
+                "Horizon": ag["Horizon"],
+                "Priorité": ag["Priorité"],
+                "Action": ag["Action"],
+                "Risques concernés": ", ".join(ag["Risques"]),
+                "Professionnels": ", ".join(ag["Pros"]),
             })
 
-    if rows:
-        order = {"Actions immédiates": 0, "Actions à moyen terme": 1, "Suivi annuel": 2}
-        priority_order = {"Critique": 0, "Élevé": 1, "Moyen": 2, "Faible": 3, "Inexistant": 4}
-        out = pd.DataFrame(rows).drop_duplicates().reset_index(drop=True)
-        out["_h"] = out["Horizon"].map(order)
-        out["_p"] = out["Priorité"].map(priority_order)
-        return out.sort_values(["_h", "_p", "Risques concernés"]).drop(columns=["_h", "_p"]).reset_index(drop=True)
-    return pd.DataFrame(columns=["Horizon", "Priorité", "Action", "Risques concernés", "Professionnels"])
+    _add_group("Actions immédiates", ["Critique", "Élevé"])
+    _add_group("Actions à moyen terme", ["Moyen"])
 
+    rows += [
+        {
+            "Horizon": "Suivi annuel",
+            "Priorité": "Faible",
+            "Action": "Mettre à jour le diagnostic avec le client chaque année",
+            "Risques concernés": "Tous les risques identifiés",
+            "Professionnels": "CGP",
+        },
+        {
+            "Horizon": "Suivi annuel",
+            "Priorité": "Faible",
+            "Action": "Vérifier la conformité des engagements Dutreil si applicable",
+            "Risques concernés": "Remise en cause du Pacte Dutreil",
+            "Professionnels": "Avocat fiscaliste, Expert-comptable",
+        },
+    ]
+
+    if not rows:
+        return pd.DataFrame(
+            columns=["Horizon", "Priorité", "Action", "Risques concernés", "Professionnels"]
+        )
+
+    plan_df = pd.DataFrame(rows)
+    h_order = {"Actions immédiates": 0, "Actions à moyen terme": 1, "Suivi annuel": 2}
+    p_order = {"Critique": 0, "Élevé": 1, "Moyen": 2, "Faible": 3, "Inexistant": 4}
+    plan_df["_h"] = plan_df["Horizon"].map(h_order).fillna(3)
+    plan_df["_p"] = plan_df["Priorité"].map(p_order).fillna(5)
+    plan_df = (
+        plan_df.sort_values(["_h", "_p"])
+        .drop(columns=["_h", "_p"])
+        .reset_index(drop=True)
+    )
+    return plan_df
+
+
+# =============================================================================
+# 7. Export Markdown
+# =============================================================================
 
 def markdown_report(client_name: str, answers: Dict, df: pd.DataFrame) -> str:
+    date_str = datetime.now().strftime("%d/%m/%Y")
     detected = df[df["Score"] > 0].copy()
-    lines = ["# Rapport de diagnostic préventif – Holding familiale"]
-    if client_name:
-        lines.append(f"\nClient / dossier : **{client_name}**")
-    lines.append("\n## 1. Synthèse du diagnostic")
-    lines.append(f"- Objectifs validés : {', '.join(answers.get('objectifs') or []) if answers.get('objectifs') else 'Non renseigné'}")
-    lines.append(f"- Nombre d’enfants : {answers.get('nb_enfants')}")
-    lines.append(f"- Héritier repreneur identifié : {answers.get('heritier_repreneur')}")
-    lines.append(f"- Poids estimé de l’entreprise dans le patrimoine : {answers.get('poids_entreprise')} %")
-    lines.append(f"- Actifs liquides hors entreprise : {answers.get('actifs_liquides')}")
-    lines.append(f"- Pacte Dutreil envisagé : {answers.get('pacte_dutreil')}")
-    lines.append("\n## 2. Risques détectés et solutions à étudier")
-    if detected.empty:
-        lines.append("Aucun risque significatif n’a été détecté à partir des réponses validées.")
-    else:
-        for _, row in detected.iterrows():
-            lines.append(f"\n### {row['Risque']} — {row['Niveau']} / score {row['Score']}")
-            lines.append(f"Objectif concerné : {row['Objectif']}")
-            lines.append(f"Signaux retenus : {row['Signaux retenus']}")
-            lines.append(f"Outils à étudier : {row['Outils à étudier']}")
-            lines.append(f"Pourquoi ces outils sont proposés : {row['Justification des outils']}")
-            lines.append(f"Actions préventives : {row['Actions préventives']}")
-            lines.append(f"Professionnels à mobiliser : {row['Professionnels']}")
-    lines.append("\n## 3. Risques inexistants")
-    zero = df[df["Score"] == 0]["Risque"].tolist()
-    lines.append(", ".join(zero) if zero else "Aucun.")
-    gaps = missing_data(answers)
-    if gaps:
-        lines.append("\n## 4. Informations manquantes à compléter")
-        for g in gaps:
-            lines.append(f"- {g}")
-    lines.append("\n## Limites")
-    lines.append("Ce rapport est un support d’aide à la décision. Il ne constitue pas une consultation juridique, fiscale ou notariale. Les pistes proposées doivent être validées avec les professionnels compétents.")
-    return "\n".join(lines)
+
+    out = [
+        f"# Diagnostic Holding Familiale — {client_name or 'Client'}",
+        f"*Généré le {date_str} — Système expert CGP*",
+        "",
+        "---",
+        "",
+        "## Contexte du dossier",
+        f"- **Entreprise** : {answers.get('company_name', 'N/A')}",
+        f"- **Forme juridique** : {answers.get('company_form', 'N/A')}",
+        f"- **Activité** : {answers.get('company_activity', 'N/A')}",
+        f"- **Âge du dirigeant** : {answers.get('client_age', 'N/A')}",
+        f"- **CGP / cabinet** : {answers.get('cgp_name', 'N/A')}",
+        f"- **Maturité du projet** : {answers.get('maturite_projet', 'N/A')}",
+        f"- **Horizon de transmission** : {answers.get('delai_transmission', 'N/A')}",
+        "",
+        "## Objectifs du dirigeant",
+    ]
+    objectifs = answers.get("objectifs") or []
+    for obj in objectifs:
+        weight = (answers.get("objective_weights") or {}).get(obj, "Important")
+        out.append(f"- {obj} *(pondération : {weight})*")
+    if answers.get("objectif_libre"):
+        out += ["", f"**Objectif en propres termes** : *{answers['objectif_libre']}*"]
+    out += [
+        "",
+        "---",
+        "",
+        f"## Résultats — {len(detected)} risque(s) identifié(s)",
+        "",
+        "| Risque | Score | Niveau |",
+        "|--------|-------|--------|",
+    ]
+    for _, row in detected.iterrows():
+        out.append(f"| {row['Risque']} | {int(row['Score'])} | **{row['Niveau']}** |")
+    out += ["", "---", "", "## Analyse détaillée par risque", ""]
+    for _, row in detected.iterrows():
+        definition = RISK_DEFINITIONS[row["Code"]]
+        out += [
+            f"### {row['Risque']} — {row['Niveau']} (Score : {int(row['Score'])})",
+            f"*Objectif concerné : {definition.objectif}*",
+            "",
+            "**Outils à étudier :** " + ", ".join(definition.outils),
+            "",
+            "**Actions préventives :**",
+        ]
+        for action in definition.actions_preventives:
+            out.append(f"- {action}")
+        out += [
+            "",
+            "**Professionnels à mobiliser :** " + ", ".join(definition.professionnels),
+            "",
+        ]
+    out += ["---", "", "## Plan d'action", ""]
+    plan = build_action_plan(df)
+    if not plan.empty:
+        for horizon in ["Actions immédiates", "Actions à moyen terme", "Suivi annuel"]:
+            hdf = plan[plan["Horizon"] == horizon]
+            if not hdf.empty:
+                out.append(f"### {horizon}")
+                for _, row in hdf.iterrows():
+                    out.append(
+                        f"- [{row['Priorité']}] {row['Action']} "
+                        f"*(Pros : {row['Professionnels']})*"
+                    )
+                out.append("")
+    if answers.get("observations"):
+        out += ["---", "", "## Observations du CGP", "", answers["observations"], ""]
+    out += ["---", "", "*Document généré automatiquement — Système expert CGP Holding Familiale*"]
+    return "\n".join(out)
 
 
-def create_docx_report(client_name: str, answers: Dict, df: pd.DataFrame, evidence: Dict[str, List[str]]) -> bytes:
-    """Génère un rapport Word dont le contenu varie réellement selon l’orientation choisie."""
+# =============================================================================
+# 8. Export Word (DOCX)
+# =============================================================================
+
+def create_docx_report(client_name: str, answers: Dict, df: pd.DataFrame, evidence: Dict) -> bytes:
     if Document is None:
         raise RuntimeError("La dépendance python-docx n'est pas installée.")
 
-    orientation = str(answers.get("rapport_orientation") or "Équilibré")
-    orientation_lower = orientation.lower()
-    is_synthetic = "synth" in orientation_lower
-    is_pedagogical = "pédagog" in orientation_lower or "pedagog" in orientation_lower
-    is_technical = "technique" in orientation_lower or "approfondi" in orientation_lower
-
     detected = df[df["Score"] > 0].copy()
-    top3 = detected.head(3).copy()
-
     doc = Document()
-    for section in doc.sections:
-        section.top_margin = Inches(0.65)
-        section.bottom_margin = Inches(0.65)
-        section.left_margin = Inches(0.75)
-        section.right_margin = Inches(0.75)
 
-    styles = doc.styles
-    try:
-        styles["Normal"].font.name = "Aptos"
-        styles["Normal"].font.size = Pt(10)
-        styles["Heading 1"].font.color.rgb = RGBColor(15, 76, 129)
-        styles["Heading 2"].font.color.rgb = RGBColor(11, 114, 133)
-    except Exception:
-        pass
+    # ── Helpers internes ───────────────────────────────────────────────────
+    def shade_cell(cell, hex_color: str) -> None:
+        shading = OxmlElement("w:shd")
+        shading.set(qn("w:val"), "clear")
+        shading.set(qn("w:color"), "auto")
+        shading.set(qn("w:fill"), hex_color.lstrip("#"))
+        cell._tc.get_or_add_tcPr().append(shading)
 
-    def shade_cell(cell, fill: str) -> None:
-        if OxmlElement is None or qn is None:
-            return
-        tc_pr = cell._tc.get_or_add_tcPr()
-        shd = OxmlElement("w:shd")
-        shd.set(qn("w:fill"), fill)
-        tc_pr.append(shd)
-
-    def set_cell_text(cell, text: str, bold: bool = False, color: str | None = None, size: int | None = None) -> None:
+    def set_cell_text(cell, text: str, bold: bool = False, font_size: int = 11,
+                       color_hex: str = "000000") -> None:
         cell.text = ""
-        p = cell.paragraphs[0]
-        run = p.add_run(str(text))
+        run = cell.paragraphs[0].add_run(str(text))
         run.bold = bold
-        if color:
-            run.font.color.rgb = RGBColor.from_string(color)
-        if size:
-            run.font.size = Pt(size)
+        run.font.size = Pt(font_size)
+        run.font.color.rgb = RGBColor.from_string(color_hex)
 
-    def add_bullets(items: List[str], max_items: int | None = None) -> None:
-        shown = list(items or [])
-        if max_items is not None:
-            shown = shown[:max_items]
-        if not shown:
-            doc.add_paragraph("Aucun élément renseigné à ce stade.")
-            return
-        for item in shown:
-            doc.add_paragraph(str(item), style="List Bullet")
+    def add_bullets(items: List[str]) -> None:
+        for item in items:
+            p = doc.add_paragraph(style="List Bullet")
+            p.add_run(item).font.size = Pt(10)
 
-    def add_small_note(text: str, color: str = "475569") -> None:
-        p = doc.add_paragraph()
-        run = p.add_run(text)
-        run.italic = True
-        run.font.color.rgb = RGBColor.from_string(color)
-        run.font.size = Pt(9)
+    def add_small_note(text: str) -> None:
+        p = doc.add_paragraph(text)
+        p.runs[0].font.size = Pt(9)
+        p.runs[0].italic = True
 
-    def add_label_value_table(title: str, rows: List[Tuple[str, str]], compact: bool = False) -> None:
-        doc.add_heading(title, level=2)
-        table = doc.add_table(rows=1, cols=2)
-        table.alignment = WD_TABLE_ALIGNMENT.CENTER
-        table.style = "Table Grid"
-        set_cell_text(table.rows[0].cells[0], "Information", bold=True, color="FFFFFF", size=9)
-        set_cell_text(table.rows[0].cells[1], "Réponse validée", bold=True, color="FFFFFF", size=9)
-        shade_cell(table.rows[0].cells[0], "0F4C81")
-        shade_cell(table.rows[0].cells[1], "0F4C81")
-        for label, value in rows:
-            cells = table.add_row().cells
-            cells[0].text = str(label)
-            cells[1].text = str(value)
-        if compact:
-            for row in table.rows:
-                for cell in row.cells:
-                    for paragraph in cell.paragraphs:
-                        for run in paragraph.runs:
-                            run.font.size = Pt(9)
+    def add_heading(text: str, level: int = 1) -> None:
+        doc.add_heading(text, level=level)
 
-    def add_tool_justification_table(risk_code: str, max_tools: int | None = None) -> None:
-        justifications = get_tool_justifications(risk_code)
-        if max_tools is not None:
-            justifications = dict(list(justifications.items())[:max_tools])
-        if not justifications:
-            doc.add_paragraph("Aucune justification disponible à ce stade.")
-            return
-        table = doc.add_table(rows=1, cols=2)
-        table.alignment = WD_TABLE_ALIGNMENT.CENTER
-        table.style = "Table Grid"
-        set_cell_text(table.rows[0].cells[0], "Outil proposé", bold=True, color="FFFFFF", size=9)
-        set_cell_text(table.rows[0].cells[1], "Pourquoi cet outil est proposé", bold=True, color="FFFFFF", size=9)
-        shade_cell(table.rows[0].cells[0], "0F4C81")
-        shade_cell(table.rows[0].cells[1], "0F4C81")
-        for tool, why in justifications.items():
-            cells = table.add_row().cells
-            cells[0].text = str(tool)
-            cells[1].text = str(why)
+    # ── Couverture ────────────────────────────────────────────────────────
+    doc.add_heading("Diagnostic Holding Familiale", level=0)
+    doc.add_paragraph(f"Client : {client_name or 'N/A'}")
+    doc.add_paragraph(f"Entreprise : {answers.get('company_name', 'N/A')}")
+    doc.add_paragraph(f"CGP / Cabinet : {answers.get('cgp_name', 'N/A')}")
+    doc.add_paragraph(f"Date : {datetime.now().strftime('%d/%m/%Y')}")
+    doc.add_paragraph(
+        "Document confidentiel — généré automatiquement par le système expert CGP Holding Familiale"
+    )
+    doc.add_page_break()
 
-    def add_cover_page() -> None:
-        title = doc.add_paragraph()
-        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        r = title.add_run("Rapport de diagnostic préventif\nHolding familiale")
-        r.bold = True
-        r.font.size = Pt(24)
-        r.font.color.rgb = RGBColor(15, 76, 129)
-        doc.add_paragraph()
-        subtitle = doc.add_paragraph()
-        subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        rs = subtitle.add_run(f"Format retenu : {orientation}")
-        rs.bold = True
-        rs.font.size = Pt(13)
-        rs.font.color.rgb = RGBColor(11, 114, 133)
-        doc.add_paragraph()
-        meta_rows = [
-            ("Client / dossier", client_name or answers.get("client_name") or "Non renseigné"),
-            ("Entreprise", answers.get("company_name") or "Non renseigné"),
-            ("CGP / cabinet", answers.get("cgp_name") or "Non renseigné"),
-            ("Date de l’entretien", answers.get("entretien_date") or datetime.now().strftime("%d/%m/%Y")),
-        ]
-        add_label_value_table("Informations générales", [(k, str(v)) for k, v in meta_rows], compact=True)
-        doc.add_paragraph()
-        p = doc.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run = p.add_run("Objectif → Risque → Outil → Prévention → Suivi")
-        run.bold = True
-        run.font.color.rgb = RGBColor(15, 76, 129)
-        doc.add_page_break()
+    # ── Synthèse exécutive ────────────────────────────────────────────────
+    add_heading("Synthèse exécutive", 1)
+    n_crit = int((detected["Niveau"] == "Critique").sum()) if not detected.empty else 0
+    n_elev = int((detected["Niveau"] == "Élevé").sum()) if not detected.empty else 0
+    doc.add_paragraph(
+        f"Ce diagnostic identifie {len(detected)} risque(s) actif(s) sur 12 analysés, "
+        f"dont {n_crit} critique(s) et {n_elev} élevé(s)."
+    )
+    orientation = answers.get("rapport_orientation", "Équilibré")
+    doc.add_paragraph(f"Orientation du rapport : {orientation}.")
 
-    def add_static_toc() -> None:
-        doc.add_heading("Sommaire", level=1)
-        if is_synthetic:
-            toc_items = [
-                "1. Synthèse exécutive",
-                "2. Informations clés du dossier",
-                "3. Risques prioritaires",
-                "4. Solutions et actions prioritaires",
-                "5. Points à valider",
-                "6. Clause de prudence",
-            ]
-        elif is_pedagogical:
-            toc_items = [
-                "1. Synthèse exécutive",
-                "2. Informations recueillies",
-                "3. Lecture pédagogique des risques",
-                "4. Pourquoi ces outils sont proposés",
-                "5. Plan d’action expliqué",
-                "6. Points à valider",
-                "7. Clause de prudence",
-            ]
-        elif is_technical:
-            toc_items = [
-                "1. Synthèse exécutive",
-                "2. Informations complètes recueillies",
-                "3. Méthodologie et scoring",
-                "4. Pondération des objectifs",
-                "5. Matrice probabilité / gravité",
-                "6. Analyse technique par risque",
-                "7. Plan d’action hiérarchisé",
-                "8. Points à valider et informations manquantes",
-                "9. Clause de prudence",
-            ]
-        else:
-            toc_items = [
-                "1. Synthèse exécutive",
-                "2. Informations recueillies",
-                "3. Pondération des objectifs",
-                "4. Top 3 des risques prioritaires",
-                "5. Matrice probabilité / gravité",
-                "6. Analyse et solutions par risque",
-                "7. Plan d’action en trois temps",
-                "8. Points à valider",
-                "9. Clause de prudence",
-            ]
-        for item in toc_items:
-            doc.add_paragraph(item, style="List Number")
-        doc.add_page_break()
+    # ── Contexte ──────────────────────────────────────────────────────────
+    doc.add_page_break()
+    add_heading("Contexte du dossier", 1)
+    fields = [
+        ("Âge du dirigeant", answers.get("client_age", "N/A")),
+        ("Entreprise", answers.get("company_name", "N/A")),
+        ("Forme juridique", answers.get("company_form", "N/A")),
+        ("Activité / secteur", answers.get("company_activity", "N/A")),
+        ("Maturité du projet", answers.get("maturite_projet", "N/A")),
+        ("Horizon de transmission", answers.get("delai_transmission", "N/A")),
+        ("Valeur de l'entreprise", f"{int(answers.get('valeur_entreprise', 0)):,} €".replace(",", " ")),
+        ("Poids dans le patrimoine", f"{answers.get('poids_entreprise', 0)} %"),
+        ("Nombre d'enfants", answers.get("nb_enfants", "N/A")),
+        ("Conjoint présent", answers.get("conjoint_present", "N/A")),
+    ]
+    table = doc.add_table(rows=len(fields), cols=2)
+    table.style = "Table Grid"
+    for i, (label, value) in enumerate(fields):
+        table.rows[i].cells[0].text = label
+        table.rows[i].cells[1].text = str(value)
 
-    def add_executive_summary() -> None:
-        doc.add_heading("1. Synthèse exécutive", level=1)
-        table = doc.add_table(rows=1, cols=1)
-        table.alignment = WD_TABLE_ALIGNMENT.CENTER
-        table.style = "Table Grid"
-        cell = table.rows[0].cells[0]
-        shade_cell(cell, "EAF4F8")
-        cell.text = ""
-        p = cell.paragraphs[0]
-        r = p.add_run("Lecture du diagnostic\n")
-        r.bold = True
-        r.font.size = Pt(13)
-        r.font.color.rgb = RGBColor(15, 76, 129)
-        if detected.empty:
-            text = "Aucun risque significatif n’a été détecté à partir des réponses validées. Le diagnostic doit être complété si de nouvelles informations apparaissent."
-        else:
-            top = detected.iloc[0]
-            crit = int((detected["Niveau"] == "Critique").sum())
-            high = int((detected["Niveau"] == "Élevé").sum())
-            base = f"{len(detected)} risque(s) détecté(s), dont {crit} critique(s) et {high} élevé(s). Le risque principal identifié est : {top['Risque']} ({top['Niveau']}, score {int(top['Score'])})."
-            if is_synthetic:
-                text = base + " Le rapport se concentre sur les risques prioritaires, les décisions à prendre et les actions immédiates."
-            elif is_pedagogical:
-                text = base + " Le rapport privilégie une lecture accessible : il explique les risques, les raisons des outils proposés et les actions à mener pour rendre la stratégie compréhensible pour le client et sa famille."
-            elif is_technical:
-                text = base + " Le rapport détaille les signaux retenus, la pondération des objectifs, le scoring, les points de vigilance et les validations professionnelles nécessaires."
-            else:
-                text = base + " Les recommandations constituent des pistes de travail à valider avec les professionnels compétents."
-        p.add_run(text)
-        if answers.get("objectif_libre"):
-            doc.add_paragraph(f"Objectif exprimé par le client : {answers.get('objectif_libre')}")
-
-    def add_context_section() -> None:
-        key_rows = [
-            ("Client / dossier", str(answers.get("client_name") or "Non renseigné")),
-            ("Âge du dirigeant", str(answers.get("client_age") or "Non renseigné")),
-            ("Entreprise", str(answers.get("company_name") or "Non renseigné")),
-            ("Activité / secteur", str(answers.get("company_activity") or "Non renseigné")),
-            ("Forme juridique", str(answers.get("company_form", "Non renseigné"))),
-            ("Maturité du projet", str(answers.get("maturite_projet", "Non renseigné"))),
-            ("Horizon de transmission", str(answers.get("delai_transmission", "Non renseigné"))),
-            ("Qualité des informations", str(answers.get("qualite_information", "Non renseigné"))),
-            ("Objectifs validés", ", ".join(answers.get("objectifs") or []) or "Non renseigné"),
-        ]
-        if is_synthetic:
-            doc.add_heading("2. Informations clés du dossier", level=1)
-            add_label_value_table("Éléments essentiels", key_rows, compact=True)
-            return
-
-        doc.add_heading("2. Informations recueillies", level=1)
-        full_rows = key_rows + [
-            ("Nombre d’enfants", str(answers.get("nb_enfants", "Non renseigné"))),
-            ("Conjoint présent", str(answers.get("conjoint_present", "Non renseigné"))),
-            ("Famille recomposée", str(answers.get("famille_recomposee", "Non renseigné"))),
-            ("Dialogue familial", str(answers.get("dialogue_familial", "Non renseigné"))),
-            ("Héritier repreneur identifié", str(answers.get("heritier_repreneur", "Non renseigné"))),
-            ("Volonté des héritiers non repreneurs", str(answers.get("volonte_non_repreneurs", "Non renseigné"))),
-            ("Valeur estimée de l’entreprise", f"{answers.get('valeur_entreprise', 0):,.0f} €".replace(",", " ")),
-            ("Poids de l’entreprise dans le patrimoine", f"{answers.get('poids_entreprise', 0)} %"),
-            ("Actifs liquides hors entreprise", str(answers.get("actifs_liquides", "Non renseigné"))),
-            ("Besoin de revenus réguliers", str(answers.get("besoin_revenus_famille", "Non renseigné"))),
-            ("Protection du conjoint prévue", str(answers.get("protection_conjoint_prevue", "Non renseigné"))),
-            ("Gouvernance formalisée", str(answers.get("gouvernance_formalisee", "Non renseigné"))),
-            ("Pacte Dutreil envisagé", str(answers.get("pacte_dutreil", "Non renseigné"))),
-            ("Suivi annuel prévu", str(answers.get("suivi_annuel", "Non renseigné"))),
-        ]
-        if is_technical:
-            full_rows += [
-                ("Événement d’urgence ou de fragilité", str(answers.get("urgence_evenement", "Non renseigné"))),
-                ("Accord du conjoint", str(answers.get("accord_conjoint", "Non renseigné"))),
-                ("Soulte envisagée", str(answers.get("soulte_envisagee", "Non renseigné"))),
-                ("Capacité de financement de la soulte", str(answers.get("capacite_financement_soulte", "Non renseigné"))),
-                ("Valorisation indépendante", str(answers.get("valorisation_independante", "Non renseigné"))),
-                ("Audit civil", str(answers.get("audit_civil", "Non renseigné"))),
-                ("Endettement familial", str(answers.get("endettement_familial", "Non renseigné"))),
-                ("Entreprise dépendante du dirigeant", str(answers.get("entreprise_dependante_dirigeant", "Non renseigné"))),
-                ("Qualification holding animatrice", str(answers.get("holding_animatrice", "Non renseigné"))),
-                ("Audit Dutreil", str(answers.get("audit_dutreil", "Non renseigné"))),
-                ("Suivi des engagements", str(answers.get("suivi_engagements", "Non renseigné"))),
-            ]
-        add_label_value_table("Synthèse des réponses validées", full_rows, compact=not is_technical)
-
-    def add_personalization_section() -> None:
-        if is_synthetic:
-            return
-        doc.add_heading("3. Personnalisation du rapport", level=1)
-        rows = [
-            ("Orientation souhaitée", orientation),
-            ("Niveau de détail attendu", str(answers.get("niveau_detail", "Détaillé"))),
-            ("Objectif exprimé par le client", str(answers.get("objectif_libre") or "Non renseigné")),
-            ("Attentes particulières", str(answers.get("attentes_client") or "Non renseigné")),
-            ("Contraintes ou préférences", str(answers.get("contraintes_client") or "Non renseigné")),
-            ("Personnes à associer", str(answers.get("personnes_a_associer") or "Non renseigné")),
-            ("Observations libres du CGP", str(answers.get("observations") or "Non renseigné")),
-        ]
-        add_label_value_table("Éléments de contexte et de personnalisation", rows, compact=True)
-
-    def add_methodology_section() -> None:
-        if not is_technical:
-            return
-        doc.add_heading("3. Méthodologie et scoring", level=1)
-        doc.add_paragraph(
-            "Le prototype fonctionne comme un système expert fondé sur des règles. Les réponses validées activent ou non des signaux d’alerte. "
-            "Ces signaux alimentent une probabilité de survenance du risque, ensuite combinée à une gravité de base propre à chaque risque. "
-            "La pondération des objectifs renforce le score lorsque le risque est directement lié à un objectif jugé très important ou prioritaire."
-        )
-        table = doc.add_table(rows=1, cols=4)
-        table.style = "Table Grid"
-        table.alignment = WD_TABLE_ALIGNMENT.CENTER
-        for i, h in enumerate(["Niveau", "Lecture", "Type d’attention", "Suite logique"]):
-            set_cell_text(table.rows[0].cells[i], h, bold=True, color="FFFFFF", size=9)
-            shade_cell(table.rows[0].cells[i], "0F4C81")
-        rows = [
-            ("Inexistant", "Aucun signal détecté", "Pas d’action prioritaire", "Surveillance simple"),
-            ("Faible", "Signal limité", "Point à surveiller", "Compléter si nécessaire"),
-            ("Moyen", "Risque plausible", "Analyse complémentaire", "Valider avec professionnel"),
-            ("Élevé", "Risque structurant", "Traitement prioritaire", "Plan d’action à organiser"),
-            ("Critique", "Risque majeur", "Action immédiate", "Validation et coordination rapides"),
-        ]
-        for row in rows:
-            cells = table.add_row().cells
-            for idx, val in enumerate(row):
-                cells[idx].text = val
-
-    def add_objective_weights_section() -> None:
-        if is_synthetic:
-            return
-        doc.add_heading("4. Pondération des objectifs", level=1)
+    # ── Objectifs et pondérations ─────────────────────────────────────────
+    doc.add_page_break()
+    add_heading("Objectifs et pondérations", 1)
+    objectifs = answers.get("objectifs") or []
+    if objectifs:
         weights = answers.get("objective_weights") or {}
-        objectives = answers.get("objectifs") or []
-        if not objectives:
-            doc.add_paragraph("Aucun objectif n’a été validé.")
-            return
-        table = doc.add_table(rows=1, cols=2)
-        table.alignment = WD_TABLE_ALIGNMENT.CENTER
-        table.style = "Table Grid"
-        set_cell_text(table.rows[0].cells[0], "Objectif", bold=True, color="FFFFFF")
-        set_cell_text(table.rows[0].cells[1], "Ordre d’importance", bold=True, color="FFFFFF")
-        shade_cell(table.rows[0].cells[0], "0F4C81")
-        shade_cell(table.rows[0].cells[1], "0F4C81")
-        for obj in objectives:
-            cells = table.add_row().cells
-            cells[0].text = obj
-            cells[1].text = weights.get(obj, "Important")
+        table_obj = doc.add_table(rows=1 + len(objectifs), cols=2)
+        table_obj.style = "Table Grid"
+        table_obj.rows[0].cells[0].text = "Objectif"
+        table_obj.rows[0].cells[1].text = "Pondération"
+        for idx, obj in enumerate(objectifs, start=1):
+            table_obj.rows[idx].cells[0].text = obj
+            table_obj.rows[idx].cells[1].text = weights.get(obj, "Important")
+    if answers.get("objectif_libre"):
+        doc.add_paragraph(f"\nObjectif exprimé par le client : {answers['objectif_libre']}")
 
-    def add_top_risks_section() -> None:
-        doc.add_heading("3. Risques prioritaires" if is_synthetic else "5. Top 3 des risques prioritaires", level=1)
-        if top3.empty:
-            doc.add_paragraph("Aucun risque prioritaire n’a été détecté au vu des réponses validées.")
-            return
-        table = doc.add_table(rows=1, cols=5)
-        table.alignment = WD_TABLE_ALIGNMENT.CENTER
-        table.style = "Table Grid"
-        headers = ["Rang", "Risque", "Niveau", "Score", "Première réponse à envisager"]
-        for i, h in enumerate(headers):
-            set_cell_text(table.rows[0].cells[i], h, bold=True, color="FFFFFF", size=9)
-            shade_cell(table.rows[0].cells[i], "0F4C81")
-        for idx, (_, row) in enumerate(top3.iterrows(), start=1):
-            definition = RISK_DEFINITIONS[row["Code"]]
-            cells = table.add_row().cells
-            cells[0].text = str(idx)
-            cells[1].text = str(row["Risque"])
-            cells[2].text = str(row["Niveau"])
-            cells[3].text = str(int(row["Score"]))
-            cells[4].text = definition.actions_preventives[0] if definition.actions_preventives else "À approfondir"
-            color = {"Critique": "FEE2E2", "Élevé": "FFEDD5", "Moyen": "DBEAFE", "Faible": "DCFCE7"}.get(str(row["Niveau"]), "F8FAFC")
-            shade_cell(cells[2], color)
+    # ── Matrice des risques ───────────────────────────────────────────────
+    doc.add_page_break()
+    add_heading("Matrice des risques", 1)
+    cols_matrix = ["Risque", "Niveau", "Score", "Probabilité", "Gravité"]
+    t = doc.add_table(rows=1 + len(df), cols=len(cols_matrix))
+    t.style = "Table Grid"
+    LEVEL_COLORS = {"Critique": "7f1d1d", "Élevé": "b45309",
+                    "Moyen": "1d4ed8", "Faible": "047857", "Inexistant": "6b7280"}
+    for j, col in enumerate(cols_matrix):
+        t.rows[0].cells[j].text = col
+    for i, (_, row) in enumerate(df.iterrows(), start=1):
+        t.rows[i].cells[0].text = str(row["Risque"])
+        set_cell_text(t.rows[i].cells[1], str(row["Niveau"]), bold=True,
+                      color_hex=LEVEL_COLORS.get(str(row["Niveau"]), "000000"))
+        t.rows[i].cells[2].text = str(int(row["Score"]))
+        t.rows[i].cells[3].text = str(int(row["Probabilité"]))
+        t.rows[i].cells[4].text = str(int(row["Gravité"]))
 
-    def add_probability_gravity_matrix() -> None:
-        if is_synthetic or is_pedagogical:
-            return
-        doc.add_heading("6. Matrice probabilité / gravité", level=1)
-        doc.add_paragraph("Cette matrice positionne les risques détectés selon leur probabilité estimée et leur gravité.")
-        table = doc.add_table(rows=6, cols=6)
-        table.alignment = WD_TABLE_ALIGNMENT.CENTER
-        table.style = "Table Grid"
-        set_cell_text(table.cell(0, 0), "Gravité \\ Probabilité", bold=True, color="FFFFFF", size=8)
-        shade_cell(table.cell(0, 0), "0F4C81")
-        for prob in range(1, 6):
-            set_cell_text(table.cell(0, prob), score_to_label(prob), bold=True, color="FFFFFF", size=8)
-            shade_cell(table.cell(0, prob), "0F4C81")
-        for grav in range(1, 6):
-            set_cell_text(table.cell(grav, 0), score_to_label(grav), bold=True, color="FFFFFF", size=8)
-            shade_cell(table.cell(grav, 0), "0F4C81")
+    # ── Analyse détaillée ─────────────────────────────────────────────────
+    if not detected.empty:
+        doc.add_page_break()
+        add_heading("Analyse détaillée des risques identifiés", 1)
         for _, row in detected.iterrows():
-            prob = int(row["Probabilité"])
-            grav = int(row["Gravité"])
-            if 1 <= prob <= 5 and 1 <= grav <= 5:
-                cell = table.cell(grav, prob)
-                current = cell.text.strip()
-                value = str(row["Risque"])
-                cell.text = value if not current else current + "\n" + value
-                color = {"Critique": "FEE2E2", "Élevé": "FFEDD5", "Moyen": "DBEAFE", "Faible": "DCFCE7"}.get(str(row["Niveau"]), "F8FAFC")
-                shade_cell(cell, color)
-
-    def add_risk_analysis_section() -> None:
-        if is_synthetic:
-            doc.add_heading("4. Solutions et actions prioritaires", level=1)
-        elif is_pedagogical:
-            doc.add_heading("3. Lecture pédagogique des risques", level=1)
-        elif is_technical:
-            doc.add_heading("6. Analyse technique par risque", level=1)
-        else:
-            doc.add_heading("6. Analyse et solutions par risque", level=1)
-
-        if detected.empty:
-            doc.add_paragraph("Aucune solution prioritaire n’est proposée à ce stade. Le diagnostic doit être complété si de nouveaux objectifs ou signaux apparaissent.")
-            return
-
-        risks_to_show = detected.head(5) if is_synthetic else detected
-        for _, row in risks_to_show.iterrows():
             definition = RISK_DEFINITIONS[row["Code"]]
-            doc.add_heading(f"{definition.libelle} – niveau {row['Niveau']}", level=2)
-            if is_synthetic:
-                table = doc.add_table(rows=1, cols=2)
-                table.style = "Table Grid"
-                table.alignment = WD_TABLE_ALIGNMENT.CENTER
-                set_cell_text(table.rows[0].cells[0], "Lecture", bold=True, color="FFFFFF", size=9)
-                set_cell_text(table.rows[0].cells[1], "Réponse prioritaire", bold=True, color="FFFFFF", size=9)
-                shade_cell(table.rows[0].cells[0], "0F4C81")
-                shade_cell(table.rows[0].cells[1], "0F4C81")
-                cells = table.add_row().cells
-                cells[0].text = f"Score {int(row['Score'])} – {row['Niveau']}. Signaux principaux : {row['Signaux retenus']}"
-                cells[1].text = f"Outils à étudier : {', '.join(definition.outils[:3])}. Action immédiate : {definition.actions_preventives[0] if definition.actions_preventives else 'À approfondir.'}"
-                continue
-
-            if is_pedagogical:
-                doc.add_paragraph(
-                    f"Ce risque concerne l’objectif suivant : {definition.objectif}. Il apparaît car certains éléments du diagnostic peuvent fragiliser l’atteinte de cet objectif."
-                )
-                doc.add_heading("Ce que cela peut provoquer", level=3)
-                add_bullets(definition.consequences)
-                doc.add_heading("Pourquoi ce risque ressort dans le dossier", level=3)
-                add_bullets(evidence.get(row["Code"], []), max_items=5)
-                doc.add_heading("Outils à expliquer au client", level=3)
-                add_tool_justification_table(row["Code"], max_tools=4)
-                doc.add_heading("Actions préventives formulées simplement", level=3)
-                add_bullets(definition.actions_preventives)
-                continue
-
-            # Équilibré ou technique
+            add_heading(f"{row['Risque']} — {row['Niveau']} (Score : {int(row['Score'])})", 2)
             doc.add_paragraph(f"Objectif concerné : {definition.objectif}")
-            doc.add_paragraph(f"Score : {int(row['Score'])} | Probabilité : {score_to_label(int(row['Probabilité']))} | Gravité : {score_to_label(int(row['Gravité']))} | Pondération : {row['Pondération objectif']}")
-            doc.add_heading("Signaux d’alerte retenus", level=3)
-            add_bullets(evidence.get(row["Code"], []))
-            doc.add_heading("Conséquences possibles", level=3)
+            doc.add_paragraph(
+                f"Score : {int(row['Score'])} | "
+                f"Probabilité : {score_to_label(int(row['Probabilité']))} | "
+                f"Gravité : {score_to_label(int(row['Gravité']))}"
+            )
+            signals = evidence.get(row["Code"], [])
+            if signals:
+                add_heading("Signaux retenus", 3)
+                add_bullets(signals)
+            add_heading("Conséquences possibles", 3)
             add_bullets(definition.consequences)
-            doc.add_heading("Outils à étudier", level=3)
-            add_bullets(definition.outils if is_technical else definition.outils[:4])
-            doc.add_heading("Justification des outils proposés", level=3)
-            add_tool_justification_table(row["Code"], None if is_technical else 4)
-            doc.add_heading("Actions préventives", level=3)
+            add_heading("Outils à étudier", 3)
+            add_bullets(definition.outils)
+            add_heading("Actions préventives", 3)
             add_bullets(definition.actions_preventives)
-            doc.add_heading("Professionnels à mobiliser", level=3)
-            doc.add_paragraph(", ".join(definition.professionnels))
+            doc.add_paragraph(
+                f"Professionnels à mobiliser : {', '.join(definition.professionnels)}"
+            )
 
-    def add_action_plan_section() -> None:
-        title = "4. Plan d’action" if is_synthetic else "7. Recommandations hiérarchisées en trois temps"
-        if is_pedagogical:
-            title = "5. Plan d’action expliqué"
-        doc.add_heading(title, level=1)
-        plan_df = build_action_plan(df)
-        if plan_df.empty:
-            doc.add_paragraph("Aucune recommandation hiérarchisée n’est générée tant qu’aucun risque n’est détecté.")
-            return
+    # ── Plan d'action ─────────────────────────────────────────────────────
+    doc.add_page_break()
+    add_heading("Plan d'action hiérarchisé", 1)
+    plan = build_action_plan(df)
+    if not plan.empty:
         for horizon in ["Actions immédiates", "Actions à moyen terme", "Suivi annuel"]:
-            horizon_df = plan_df[plan_df["Horizon"] == horizon]
-            if horizon_df.empty:
-                continue
-            doc.add_heading(horizon, level=2)
-            if is_pedagogical:
-                if horizon == "Actions immédiates":
-                    doc.add_paragraph("Ces actions visent à sécuriser les points les plus sensibles avant toute mise en œuvre juridique ou fiscale.")
-                elif horizon == "Actions à moyen terme":
-                    doc.add_paragraph("Ces actions permettent de construire progressivement une stratégie cohérente et acceptable pour la famille.")
-                else:
-                    doc.add_paragraph("Le suivi annuel évite que la stratégie devienne inadaptée avec le temps.")
-            table = doc.add_table(rows=1, cols=4)
-            table.alignment = WD_TABLE_ALIGNMENT.CENTER
-            table.style = "Table Grid"
-            for i, h in enumerate(["Priorité", "Action", "Risques concernés", "Professionnels"]):
-                set_cell_text(table.rows[0].cells[i], h, bold=True, color="FFFFFF", size=9)
-                shade_cell(table.rows[0].cells[i], "0B7285")
-            max_rows = 6 if is_synthetic else None
-            iterable = horizon_df.head(max_rows) if max_rows else horizon_df
-            for _, plan_row in iterable.iterrows():
-                cells = table.add_row().cells
-                cells[0].text = str(plan_row["Priorité"])
-                cells[1].text = str(plan_row["Action"])
-                cells[2].text = str(plan_row["Risques concernés"])
-                cells[3].text = str(plan_row["Professionnels"])
+            hdf = plan[plan["Horizon"] == horizon]
+            if not hdf.empty:
+                add_heading(horizon, 2)
+                for _, row in hdf.iterrows():
+                    doc.add_paragraph(
+                        f"[{row['Priorité']}] {row['Action']} "
+                        f"— Pros : {row['Professionnels']}",
+                        style="List Bullet",
+                    )
 
-    def add_professional_validation_points() -> None:
-        title = "5. Points à valider" if is_synthetic else "8. Points à valider avec les professionnels compétents"
-        if is_technical:
-            title = "8. Points à valider et informations manquantes"
-        doc.add_heading(title, level=1)
-        points = []
-        if detected.empty:
-            points.append("Compléter le diagnostic avant toute recommandation structurée.")
-        else:
-            for _, row in detected.iterrows():
-                risk_code = row["Code"]
-                risk = RISK_DEFINITIONS[risk_code]
-                if risk_code in ["contestation", "conflit_heritiers", "conjoint"]:
-                    points.append(f"Validation notariale à prévoir pour le risque : {risk.libelle}.")
-                if risk_code in ["dilution", "tiers", "blocage_gouvernance", "successeur"]:
-                    points.append(f"Validation juridique des statuts, pactes ou clauses à prévoir pour le risque : {risk.libelle}.")
-                if risk_code in ["fiscalite", "dutreil"]:
-                    points.append(f"Validation fiscale spécialisée à prévoir pour le risque : {risk.libelle}.")
-                if risk_code in ["liquidite", "dependance"]:
-                    points.append(f"Analyse financière et patrimoniale à approfondir pour le risque : {risk.libelle}.")
-        # Déduplication en conservant l’ordre
-        seen = set()
-        uniq = []
-        for point in points:
-            if point not in seen:
-                seen.add(point)
-                uniq.append(point)
-        add_bullets(uniq)
-        if is_technical:
-            gaps = missing_data(answers)
-            doc.add_heading("Informations complémentaires à recueillir", level=2)
-            add_bullets(gaps if gaps else ["Aucune information indispensable manquante n’a été identifiée par l’outil."])
+    # ── Observations ──────────────────────────────────────────────────────
+    if answers.get("observations"):
+        doc.add_page_break()
+        add_heading("Observations du CGP", 1)
+        doc.add_paragraph(answers["observations"])
 
-    def add_zero_risks_section() -> None:
-        if is_synthetic or is_pedagogical:
-            return
-        doc.add_heading("Risques non détectés au vu des réponses validées", level=1)
-        zero = df[df["Score"] == 0]["Risque"].tolist()
-        doc.add_paragraph(", ".join(zero) if zero else "Aucun.")
-
-    def add_pedagogical_lexicon() -> None:
-        if not is_pedagogical:
-            return
-        doc.add_heading("4. Repères pédagogiques sur les outils", level=1)
-        entries = [
-            ("Donation-partage", "Mécanisme permettant d’organiser de son vivant la répartition de tout ou partie du patrimoine entre les héritiers."),
-            ("Soulte", "Compensation financière versée à un héritier lorsque les lots transmis ne sont pas équivalents en valeur."),
-            ("Pacte d’associés", "Convention destinée à organiser les relations entre associés, notamment les décisions, les sorties et certaines règles de gouvernance."),
-            ("Pacte Dutreil", "Dispositif fiscal permettant, sous conditions, de réduire fortement la base taxable d’une transmission d’entreprise."),
-            ("Démembrement", "Séparation entre l’usufruit et la nue-propriété, utile pour organiser une transmission progressive."),
-        ]
-        table = doc.add_table(rows=1, cols=2)
-        table.style = "Table Grid"
-        set_cell_text(table.rows[0].cells[0], "Outil", bold=True, color="FFFFFF")
-        set_cell_text(table.rows[0].cells[1], "Explication simple", bold=True, color="FFFFFF")
-        shade_cell(table.rows[0].cells[0], "0F4C81")
-        shade_cell(table.rows[0].cells[1], "0F4C81")
-        for tool, explanation in entries:
-            cells = table.add_row().cells
-            cells[0].text = tool
-            cells[1].text = explanation
-
-    def add_caution_section() -> None:
-        title = "6. Clause de prudence" if is_synthetic else "9. Clause de prudence et limites du rapport"
-        if is_pedagogical:
-            title = "7. Clause de prudence et limites du rapport"
-        doc.add_heading(title, level=1)
-        table = doc.add_table(rows=1, cols=1)
-        table.alignment = WD_TABLE_ALIGNMENT.CENTER
-        table.style = "Table Grid"
-        cell = table.rows[0].cells[0]
-        shade_cell(cell, "FFF7ED")
-        cell.text = ""
-        p = cell.paragraphs[0]
-        r = p.add_run("Clause de prudence\n")
-        r.bold = True
-        r.font.color.rgb = RGBColor(154, 52, 18)
-        p.add_run(
-            "Ce rapport constitue un support d’aide à la décision pour le conseiller en gestion de patrimoine. "
-            "Il ne constitue pas une consultation juridique, fiscale, comptable ou notariale. "
-            "Il ne remplace pas l’intervention du notaire, de l’avocat, de l’expert-comptable ou de tout autre professionnel compétent. "
-            "Les solutions évoquées sont des pistes d’analyse qui doivent être vérifiées, adaptées et validées avant toute mise en œuvre. "
-            "La pertinence de la stratégie dépend de la qualité des informations recueillies et de l’évolution de la situation familiale, patrimoniale, professionnelle et fiscale."
-        )
-
-    add_cover_page()
-    add_static_toc()
-    add_executive_summary()
-    add_context_section()
-    add_personalization_section()
-    add_methodology_section()
-    add_objective_weights_section()
-    add_top_risks_section()
-    add_probability_gravity_matrix()
-    add_risk_analysis_section()
-    add_pedagogical_lexicon()
-    add_action_plan_section()
-    add_professional_validation_points()
-    add_zero_risks_section()
-    add_caution_section()
+    # ── Footer ────────────────────────────────────────────────────────────
+    doc.add_page_break()
+    doc.add_paragraph(
+        "Document généré automatiquement — Système expert CGP Holding Familiale\n"
+        "Ce rapport est un outil d'aide à la décision. Il ne constitue pas un conseil juridique "
+        "ou fiscal et doit être complété par les professionnels compétents."
+    )
 
     buffer = BytesIO()
     doc.save(buffer)
     buffer.seek(0)
     return buffer.getvalue()
+
+
+# =============================================================================
+# 9. Export Excel (XLSX)
+# =============================================================================
 
 def create_xlsx_matrix(df: pd.DataFrame) -> bytes:
     """Génère une matrice Excel lisible et directement exploitable."""
@@ -1597,7 +1344,7 @@ def create_xlsx_matrix(df: pd.DataFrame) -> bytes:
 
     export_columns = [
         "Objectif", "Risque", "Probabilité", "Gravité", "Score", "Niveau", "Pondération objectif",
-        "Signaux retenus", "Outils à étudier", "Justification des outils", "Actions préventives", "Professionnels",
+        "Signaux retenus", "Outils à étudier", "Actions préventives", "Professionnels",
     ]
     wb = Workbook()
     ws = wb.active
@@ -1607,7 +1354,7 @@ def create_xlsx_matrix(df: pd.DataFrame) -> bytes:
     title_cell = ws.cell(row=1, column=1)
     title_cell.value = "Matrice des risques – Diagnostic holding familiale"
     title_cell.font = Font(bold=True, size=16, color="FFFFFF")
-    title_cell.fill = PatternFill("solid", fgColor="0F4C81")
+    title_cell.fill = PatternFill("solid", fgColor="0B7285")
     title_cell.alignment = Alignment(horizontal="center", vertical="center")
     ws.row_dimensions[1].height = 28
 
@@ -1635,13 +1382,14 @@ def create_xlsx_matrix(df: pd.DataFrame) -> bytes:
         "Inexistant": "F1F5F9",
     }
 
-    sorted_df = df[export_columns].copy()
+    available_cols = [c for c in export_columns if c in df.columns]
+    sorted_df = df[available_cols].copy()
     for row_idx, (_, row) in enumerate(sorted_df.iterrows(), start=header_row + 1):
         priority = row.get("Niveau", "")
         fill_color = priority_fills.get(priority, "FFFFFF")
-        for col_idx, col_name in enumerate(export_columns, start=1):
+        for col_idx, col_name in enumerate(available_cols, start=1):
             cell = ws.cell(row=row_idx, column=col_idx)
-            cell.value = row[col_name]
+            cell.value = row.get(col_name, "")
             cell.alignment = Alignment(vertical="top", wrap_text=True)
             cell.border = border
             if col_name == "Niveau":
@@ -1650,406 +1398,837 @@ def create_xlsx_matrix(df: pd.DataFrame) -> bytes:
             elif row_idx % 2 == 0:
                 cell.fill = PatternFill("solid", fgColor="F8FAFC")
 
-    widths = {
-        "A": 24, "B": 34, "C": 12, "D": 10, "E": 10, "F": 18, "G": 22,
-        "H": 55, "I": 42, "J": 70, "K": 48, "L": 34,
-    }
-    for col_letter, width in widths.items():
+    col_widths = {"A": 24, "B": 34, "C": 12, "D": 10, "E": 10, "F": 18, "G": 22,
+                  "H": 55, "I": 42, "J": 48, "K": 34}
+    for col_letter, width in col_widths.items():
         ws.column_dimensions[col_letter].width = width
     for row in range(header_row + 1, header_row + 1 + len(sorted_df)):
         ws.row_dimensions[row].height = 60
     ws.freeze_panes = "A5"
-    ws.auto_filter.ref = f"A{header_row}:{get_column_letter(len(export_columns))}{header_row + len(sorted_df)}"
+    ws.auto_filter.ref = (
+        f"A{header_row}:{get_column_letter(len(available_cols))}{header_row + len(sorted_df)}"
+    )
 
+    # Plan d'action
     plan_df = build_action_plan(df)
     ws_plan = wb.create_sheet("Plan d'action")
     plan_columns = ["Horizon", "Priorité", "Action", "Risques concernés", "Professionnels"]
     ws_plan.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(plan_columns))
     plan_title = ws_plan.cell(row=1, column=1)
-    plan_title.value = "Plan d’action hiérarchisé – actions immédiates, moyen terme et suivi annuel"
+    plan_title.value = "Plan d'action hiérarchisé"
     plan_title.font = Font(bold=True, size=15, color="FFFFFF")
-    plan_title.fill = PatternFill("solid", fgColor="0F4C81")
+    plan_title.fill = PatternFill("solid", fgColor="0B7285")
     plan_title.alignment = Alignment(horizontal="center", vertical="center")
+    ws_plan.row_dimensions[1].height = 28
+
     for col_idx, col_name in enumerate(plan_columns, start=1):
         cell = ws_plan.cell(row=3, column=col_idx)
         cell.value = col_name
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = PatternFill("solid", fgColor="0B7285")
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = border
+
+    horizon_fills = {
+        "Actions immédiates": "FEE2E2",
+        "Actions à moyen terme": "FFEDD5",
+        "Suivi annuel": "DBEAFE",
+    }
     for row_idx, (_, row) in enumerate(plan_df.iterrows(), start=4):
+        h_fill = horizon_fills.get(row.get("Horizon", ""), "F8FAFC")
         for col_idx, col_name in enumerate(plan_columns, start=1):
             cell = ws_plan.cell(row=row_idx, column=col_idx)
-            cell.value = row[col_name]
+            cell.value = row.get(col_name, "")
             cell.alignment = Alignment(vertical="top", wrap_text=True)
             cell.border = border
-            if row_idx % 2 == 0:
+            if col_name == "Horizon":
+                cell.fill = PatternFill("solid", fgColor=h_fill)
+                cell.font = Font(bold=True)
+            elif row_idx % 2 == 0:
                 cell.fill = PatternFill("solid", fgColor="F8FAFC")
+
     for col_letter, width in {"A": 24, "B": 16, "C": 70, "D": 36, "E": 42}.items():
         ws_plan.column_dimensions[col_letter].width = width
     for row in range(4, 4 + len(plan_df)):
         ws_plan.row_dimensions[row].height = 55
     ws_plan.freeze_panes = "A4"
+    if len(plan_df) > 0:
+        ws_plan.auto_filter.ref = (
+            f"A3:{get_column_letter(len(plan_columns))}{3 + len(plan_df)}"
+        )
 
     buffer = BytesIO()
     wb.save(buffer)
     buffer.seek(0)
     return buffer.getvalue()
 
-init_app()
+
 
 VIEWS = ["Questionnaire adaptatif", "Résultats et solutions", "Exporter", "Règles de décision", "Debug validation"]
+
+# ─── Initialisation état UI ──────────────────────────────────────────────────
+
 st.session_state.setdefault("app_page", VIEWS[0])
+st.session_state.setdefault("current_subpage", "dossier")
+st.session_state.setdefault("nav_error", None)
+
+# ─── Sous-pages du questionnaire ─────────────────────────────────────────────
+
+ALL_SUBPAGES: List[Dict[str, Any]] = [
+    # Section 1 – Cadrage & objectifs
+    {"id": "dossier",        "title": "Identification du dossier",   "icon": "📋", "step": 1,
+     "desc": "Informations générales sur le dossier et le client"},
+    {"id": "maturite",       "title": "Maturité & urgence",          "icon": "🗓️", "step": 1,
+     "desc": "Horizon de transmission et signaux d'urgence"},
+    {"id": "objectifs",      "title": "Objectifs du dirigeant",      "icon": "🎯", "step": 1,
+     "desc": "Objectifs poursuivis — socle du scoring des risques"},
+    {"id": "poids",          "title": "Importance des objectifs",    "icon": "⚖️", "step": 1,
+     "desc": "Pondération pour affiner l'analyse des risques"},
+    {"id": "rapport",        "title": "Personnalisation du rapport", "icon": "📄", "step": 1,
+     "desc": "Adapter le rapport exporté au besoin du client"},
+    # Section 2 – Famille
+    {"id": "famille",        "title": "Situation familiale",         "icon": "👨‍👩‍👧", "step": 2,
+     "desc": "Composition de la famille, enfants, conjoint"},
+    {"id": "repreneur",      "title": "Repreneur & transmission",    "icon": "🔑", "step": 2,
+     "desc": "Successeur identifié et organisation de la reprise"},
+    {"id": "dialogue",       "title": "Dialogue familial",           "icon": "💬", "step": 2,
+     "desc": "Organisation du dialogue entre héritiers"},
+    {"id": "conjoint",       "title": "Protection du conjoint",      "icon": "🛡️", "step": 2,
+     "desc": "Droits et protection patrimoniale du conjoint"},
+    {"id": "succession_civ", "title": "Sécurisation successorale",   "icon": "⚖️", "step": 2,
+     "desc": "Valorisation et audit civil pour éviter la contestation"},
+    # Section 3 – Patrimoine
+    {"id": "patrimoine",     "title": "Situation patrimoniale",      "icon": "💼", "step": 3,
+     "desc": "Valeur, composition et liquidité du patrimoine"},
+    {"id": "securite_pat",   "title": "Sécurité patrimoniale",       "icon": "🔐", "step": 3,
+     "desc": "Diversification et prévoyance"},
+    # Section 4 – Gouvernance
+    {"id": "gouvernance",    "title": "Gouvernance de la holding",   "icon": "🏢", "step": 4,
+     "desc": "Règles de fonctionnement et de décision"},
+    {"id": "continuite",     "title": "Continuité opérationnelle",   "icon": "⚙️", "step": 4,
+     "desc": "Dépendance au dirigeant actuel"},
+    {"id": "succession_mgmt","title": "Succession managériale",      "icon": "👤", "step": 4,
+     "desc": "Préparation et calendrier du successeur"},
+    # Section 5 – Fiscal & Suivi
+    {"id": "fiscalite",      "title": "Fiscalité",                   "icon": "💶", "step": 5,
+     "desc": "Simulation fiscale et Pacte Dutreil"},
+    {"id": "dutreil",        "title": "Vigilance Dutreil",           "icon": "⚠️", "step": 5,
+     "desc": "Conditions et suivi du Pacte Dutreil"},
+    {"id": "suivi",          "title": "Suivi de la stratégie",       "icon": "📅", "step": 5,
+     "desc": "Revue annuelle et formalisation"},
+    # Synthèse
+    {"id": "synthese",       "title": "Synthèse du diagnostic",      "icon": "✨", "step": None,
+     "desc": "Récapitulatif et accès aux résultats détaillés"},
+]
+
+SECTION_NAMES: Dict[Any, str] = {
+    1: "Cadrage & objectifs",
+    2: "Famille",
+    3: "Patrimoine",
+    4: "Gouvernance",
+    5: "Fiscal & Suivi",
+    None: "Synthèse",
+}
+
+
+def is_subpage_active(sp_id: str, draft: Dict) -> bool:
+    objectifs = set(draft.get("objectifs") or [])
+    nb_enfants = int(draft.get("nb_enfants") or 0)
+    poids = int(draft.get("poids_entreprise") or 0)
+    valeur = int(draft.get("valeur_entreprise") or 0)
+    if sp_id == "poids":
+        return bool(objectifs)
+    if sp_id == "repreneur":
+        return nb_enfants > 0 and "Transmettre l'entreprise" in objectifs
+    if sp_id == "dialogue":
+        return nb_enfants >= 2
+    if sp_id == "conjoint":
+        return draft.get("conjoint_present") == YES
+    if sp_id == "succession_civ":
+        return nb_enfants >= 2 or draft.get("famille_recomposee") == YES
+    if sp_id == "securite_pat":
+        show_div = poids >= 40 or "Diversifier le patrimoine" in objectifs
+        show_prev = (show_div or draft.get("conjoint_present") == YES
+                     or "Protéger le conjoint et les proches" in objectifs
+                     or draft.get("besoin_revenus_famille") in ["Moyen", "Élevé"]
+                     or draft.get("urgence_evenement") == YES)
+        return show_div or show_prev
+    if sp_id == "gouvernance":
+        return ("Conserver le contrôle familial" in objectifs
+                or nb_enfants >= 2
+                or draft.get("besoin_revenus_famille") in ["Moyen", "Élevé"]
+                or "Préserver l'équité entre les héritiers" in objectifs)
+    if sp_id == "succession_mgmt":
+        return draft.get("heritier_repreneur") in [YES, UNCERTAIN]
+    if sp_id == "fiscalite":
+        return "Optimiser la fiscalité" in objectifs or valeur >= 1_000_000
+    if sp_id == "dutreil":
+        return draft.get("pacte_dutreil") == YES
+    return True
+
+
+def get_active_subpages(draft: Dict) -> List[Dict]:
+    return [sp for sp in ALL_SUBPAGES if is_subpage_active(sp["id"], draft)]
+
+
+def get_subpage_idx(sp_id: str, active: List[Dict]) -> int:
+    ids = [p["id"] for p in active]
+    return ids.index(sp_id) if sp_id in ids else 0
+
+
+def navigate_next(current_idx: int, active_pages: List[Dict]) -> None:
+    current = active_pages[current_idx]
+    is_last = current_idx + 1 >= len(active_pages)
+    if not is_last:
+        next_pg = active_pages[current_idx + 1]
+        crosses = current["step"] is not None and next_pg["step"] != current["step"]
+    else:
+        crosses = current["step"] is not None
+    if crosses:
+        ok, msg = save_step(current["step"])
+        if not ok:
+            st.session_state.nav_error = msg
+            st.rerun()
+            return
+    st.session_state.nav_error = None
+    st.session_state.current_subpage = "synthese" if is_last else active_pages[current_idx + 1]["id"]
+    st.rerun()
+
+
+def navigate_prev(current_idx: int, active_pages: List[Dict]) -> None:
+    if current_idx > 0:
+        st.session_state.nav_error = None
+        st.session_state.current_subpage = active_pages[current_idx - 1]["id"]
+        st.rerun()
+
+
+# ─── CSS ─────────────────────────────────────────────────────────────────────
+
+st.markdown("""
+<style>
+.main .block-container { padding-top: 0.6rem; max-width: 980px; }
+
+.hero {
+    background: linear-gradient(135deg, #0ea5e9 0%, #06b6d4 45%, #10b981 100%);
+    color: white; padding: 18px 26px; border-radius: 16px; margin-bottom: 18px;
+    box-shadow: 0 4px 20px rgba(14,165,233,.2);
+}
+.hero h1 { margin: 0; color: white; font-size: 1.4rem; font-weight: 700; }
+.hero p  { margin: 4px 0 0; color: rgba(255,255,255,.9); font-size: .86rem; }
+
+.page-hdr {
+    display: flex; align-items: center; gap: 16px;
+    background: linear-gradient(135deg, #f0f9ff 0%, #f0fdf4 100%);
+    border: 1px solid #bae6fd; border-radius: 16px;
+    padding: 16px 22px; margin-bottom: 20px;
+}
+.page-hdr-icon  { font-size: 2.2rem; line-height: 1; flex-shrink: 0; }
+.page-hdr-title { font-size: 1.1rem; font-weight: 700; color: #0c4a6e; }
+.page-hdr-desc  { font-size: .82rem; color: #0369a1; margin-top: 3px; }
+.page-hdr-badge {
+    font-size: .68rem; font-weight: 700; background: #0ea5e9; color: white !important;
+    padding: 2px 8px; border-radius: 999px; margin-left: 8px; vertical-align: middle;
+}
+
+.sc-title {
+    font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+    color: #0369a1; background: #f0f9ff; border-left: 3px solid #38bdf8;
+    padding: 7px 12px; border-radius: 0 6px 6px 0; margin: 18px 0 12px 0;
+}
+
+.card {
+    background: white !important; border-radius: 14px; padding: 18px 20px; margin: 10px 0;
+    box-shadow: 0 2px 8px rgba(14,165,233,.08); border: 1px solid #e0f2fe;
+}
+.card h3, .card p, .card li, .card div, .card strong { color: #0c172a !important; }
+.card h3 { margin-top: 0; margin-bottom: 8px; }
+
+.badge {
+    color: white !important; padding: 4px 10px; border-radius: 999px;
+    font-weight: 700; font-size: .75rem; display: inline-block;
+}
+
+.importance-card {
+    background: #fafffe; border: 1px solid #a7f3d0; border-radius: 12px;
+    padding: 14px 16px; margin: 8px 0;
+}
+.importance-help {
+    background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px;
+    padding: 9px 12px; color: #0369a1; margin: 6px 0 14px 0; font-size: .84rem;
+}
+
+.justification-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.justification-table th {
+    background: #f0f9ff; color: #0c4a6e; text-align: left;
+    padding: 8px 12px; border: 1px solid #e0f2fe;
+}
+.justification-table td { padding: 8px 12px; border: 1px solid #e0f2fe; vertical-align: top; }
+
+.solution-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; margin-top: 12px; }
+@media(max-width:1000px) { .solution-grid { grid-template-columns: 1fr; } }
+
+.small-note { color: #475569 !important; font-size: .87rem; }
+</style>
+""", unsafe_allow_html=True)
+
+# ─── Hero ────────────────────────────────────────────────────────────────────
+
+st.markdown("""
+<div class="hero">
+  <h1>🏛️ Diagnostic Holding Familiale</h1>
+  <p>Système expert interactif — Objectif → Risque → Outil → Prévention → Suivi</p>
+</div>
+""", unsafe_allow_html=True)
+
+# ─── Calcul des risques (réponses validées uniquement) ───────────────────────
+
+validated_answers = st.session_state.answers
+df, evidence = calculate_risks(validated_answers)
+detected_df = df[df["Score"] > 0].copy()
+zero_df = df[df["Score"] == 0].copy()
+
+# ─── Helpers rendu ───────────────────────────────────────────────────────────
+
+def section_card(title: str, icon: str = "") -> None:
+    prefix = f"{icon} " if icon else ""
+    st.markdown(f'<div class="sc-title">{prefix}{title}</div>', unsafe_allow_html=True)
+
 
 def render_view_navigation(current_view: str) -> None:
-    """Affiche des boutons de navigation entre les vues principales."""
     idx = VIEWS.index(current_view)
     st.divider()
-    c1, c2, c3 = st.columns([1.6, 4, 1.6])
+    c1, _, c3 = st.columns([1.8, 5, 1.8])
     with c1:
         if idx > 0:
             if st.button(f"← {VIEWS[idx - 1]}", key=f"prev_view_{current_view}"):
                 st.session_state.app_page = VIEWS[idx - 1]
                 st.rerun()
-    with c2:
-        st.caption("Navigation entre les onglets de l’outil")
     with c3:
         if idx < len(VIEWS) - 1:
             if st.button(f"{VIEWS[idx + 1]} →", key=f"next_view_{current_view}", type="primary"):
                 st.session_state.app_page = VIEWS[idx + 1]
                 st.rerun()
 
-st.markdown("""
-<style>
-    .main .block-container { padding-top: 1.2rem; }
-    .hero {background: linear-gradient(135deg, #0f4c81, #0b7285); color: white; padding: 24px 28px; border-radius: 16px; margin-bottom: 18px;}
-    .hero h1 {margin: 0; color: white; font-size: 2rem;}
-    .hero p {margin: 8px 0 0 0; color: #e6f7ff; font-size: 1.03rem;}
-    .card {background: #ffffff !important; color: #0f172a !important; border-radius: 14px; padding: 18px 20px; margin: 12px 0; box-shadow: 0 1px 4px rgba(15, 23, 42, .12); border: 1px solid #e5e7eb;}
-    .card h3, .card p, .card li, .card ul, .card div, .card strong {color: #0f172a !important;}
-    .card h3 {margin-top: 0; margin-bottom: 8px;}
-    .card .muted {color:#475569 !important;}
-    .badge {color: white !important; padding: 5px 9px; border-radius: 999px; font-weight: 700; display: inline-block;}
-    .small-note {color:#475569 !important; font-size:.92rem;}
-    .step-pill {background:#eff6ff; color:#1e3a8a; border:1px solid #bfdbfe; border-radius:999px; padding:5px 10px; font-weight:600; display:inline-block; margin-right:6px; margin-bottom:6px;}
-    .step-pill.off {background:#f8fafc;color:#64748b;border-color:#e2e8f0;}
-    .step-pill.done {background:#ecfdf5;color:#047857;border-color:#a7f3d0;}
-    .importance-card {background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; padding:14px 16px; margin:10px 0; box-shadow:0 1px 3px rgba(15,23,42,.08);}
-    .importance-help {background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:10px 12px; color:#334155; margin:8px 0 12px 0;}
-    .solution-grid {display:grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 10px;}
-    .justification-table {width:100%; border-collapse: collapse; margin-top: 10px; background:#ffffff; color:#0f172a;}
-    .justification-table th {background:#e0f2fe; color:#0f172a; text-align:left; padding:8px; border:1px solid #cbd5e1;}
-    .justification-table td {padding:8px; border:1px solid #cbd5e1; vertical-align:top; color:#0f172a;}
-    @media (max-width: 1000px) {.solution-grid {grid-template-columns: 1fr;}}
-</style>
-""", unsafe_allow_html=True)
 
-st.markdown("""
-<div class="hero">
-    <h1>Système expert interactif – Diagnostic holding familiale</h1>
-    <p>Chaque étape est validée explicitement. Les résultats utilisent uniquement les réponses validées.</p>
-</div>
-""", unsafe_allow_html=True)
+def render_page_header(sp: Dict) -> None:
+    step = sp.get("step")
+    section = SECTION_NAMES.get(step, "") if step is not None else ""
+    badge = (f'<span class="page-hdr-badge">{section}</span>' if section else "")
+    st.markdown(
+        f'<div class="page-hdr">'
+        f'<div class="page-hdr-icon">{sp["icon"]}</div>'
+        f'<div>'
+        f'<div class="page-hdr-title">{sp["title"]}{badge}</div>'
+        f'<div class="page-hdr-desc">{sp["desc"]}</div>'
+        f'</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
-with st.sidebar:
-    st.header("Navigation")
-    page = st.session_state.get("app_page", VIEWS[0])
-    for view in VIEWS:
-        active = view == page
-        label = f"● {view}" if active else view
-        if st.button(label, key=f"nav_{safe_key(view)}", use_container_width=True, type="primary" if active else "secondary"):
-            st.session_state.app_page = view
-            st.rerun()
-    st.divider()
-    st.write("Étapes validées")
-    for i in range(1, 6):
-        label = "validée" if i in st.session_state.validated_steps else "non validée"
-        st.caption(f"Étape {i} : {label}" + (f" à {st.session_state.last_validation.get(i)}" if i in st.session_state.last_validation else ""))
-    st.progress(int(len(st.session_state.validated_steps.intersection({1,2,3,4,5})) / 5 * 100))
-    st.divider()
-    if st.button("Réinitialiser le diagnostic", type="secondary"):
-        reset_app()
-        st.rerun()
-    st.info("Les réponses saisies ne modifient pas les résultats tant qu’elles n’ont pas été validées.")
 
-# Les résultats sont calculés uniquement avec les réponses validées.
-validated_answers = st.session_state.answers
-df, evidence = calculate_risks(validated_answers)
-detected_df = df[df["Score"] > 0].copy()
-zero_df = df[df["Score"] == 0].copy()
+def render_subpage(sp_id: str) -> None:
+    """Affiche les questions de la sous-page courante."""
 
-if page == "Questionnaire adaptatif":
-    st.subheader("Questionnaire adaptatif")
-    pills = []
-    for i in range(1, 7):
-        cls = "step-pill"
-        if i in st.session_state.validated_steps:
-            cls += " done"
-        elif i != st.session_state.current_step:
-            cls += " off"
-        pills.append(f"<span class='{cls}'>Étape {i}</span>")
-    st.markdown(" ".join(pills), unsafe_allow_html=True)
-    st.caption("Les résultats se mettent à jour uniquement après validation de l’étape. Cela évite les réponses partielles ou non enregistrées.")
-
-    step = st.session_state.current_step
-
-    if step == 1:
-        st.markdown("### Étape 1 – Cadrage du dossier, objectifs et personnalisation")
-        st.caption("Cette étape sert à cadrer l’entretien, à personnaliser le rapport et à préciser les objectifs poursuivis. Certaines informations sont utilisées pour l’analyse ; d’autres servent uniquement à rendre le rapport plus contextualisé.")
-
-        st.markdown("#### Identification du dossier")
+    if sp_id == "dossier":
         c1, c2, c3 = st.columns(3)
         with c1:
             text_input_field("Nom du dossier / client", "client_name", "Ex. Famille Martin")
             number_input("Âge du dirigeant", "client_age", min_value=0, max_value=100, step=1)
         with c2:
-            text_input_field("Nom de l’entreprise", "company_name", "Ex. Martin Industrie")
-            selectbox("Forme juridique de la société", "company_form", [UNKNOWN, "SAS", "SARL", "SA", "SNC", "Entreprise individuelle", "Autre"])
+            text_input_field("Nom de l'entreprise", "company_name", "Ex. Martin Industrie")
+            selectbox("Forme juridique", "company_form",
+                      [UNKNOWN, "SAS", "SARL", "SA", "SNC", "Entreprise individuelle", "Autre"])
         with c3:
-            text_input_field("Activité / secteur", "company_activity", "Ex. industrie, bâtiment, conseil...")
-            text_input_field("Nom du CGP / cabinet", "cgp_name", "Ex. Cabinet Dupont")
-
+            text_input_field("Activité / secteur", "company_activity", "Ex. industrie, bâtiment…")
+            text_input_field("CGP / cabinet", "cgp_name", "Ex. Cabinet Dupont")
         c4, c5 = st.columns(2)
         with c4:
-            text_input_field("Date de l’entretien", "entretien_date", "Ex. 16/06/2026")
+            text_input_field("Date de l'entretien", "entretien_date", "Ex. 21/06/2026")
         with c5:
-            selectbox("Qualité des informations recueillies", "qualite_information", [UNKNOWN, "Confirmées", "Partiellement confirmées", "À vérifier"])
+            selectbox("Qualité des informations recueillies", "qualite_information",
+                      [UNKNOWN, "Confirmées", "Partiellement confirmées", "À vérifier"])
 
-        st.markdown("#### Maturité du projet")
-        c1, c2, c3 = st.columns(3)
+    elif sp_id == "maturite":
+        c1, c2 = st.columns(2)
         with c1:
-            selectbox("Niveau de maturité du projet", "maturite_projet", [UNKNOWN, "Simple réflexion", "Projet envisagé", "Transmission prévue", "Transmission urgente"])
+            selectbox("Niveau de maturité du projet", "maturite_projet",
+                      [UNKNOWN, "Simple réflexion", "Projet envisagé",
+                       "Transmission prévue", "Transmission urgente"])
+            selectbox("Horizon de transmission envisagé", "delai_transmission",
+                      [UNKNOWN, "Moins de 12 mois", "1 à 3 ans", "Plus de 3 ans", "Pas défini"])
         with c2:
-            selectbox("Horizon de transmission envisagé", "delai_transmission", [UNKNOWN, "Moins de 12 mois", "1 à 3 ans", "Plus de 3 ans", "Pas défini"])
-        with c3:
-            yes_no_unknown("Existe-t-il un événement d’urgence ou de fragilité ?", "urgence_evenement")
+            yes_no_unknown("Événement d'urgence ou de fragilité ?", "urgence_evenement")
+            st.caption(
+                "Maladie, accident, conflit imminent, pression extérieure… "
+                "tout signal qui accélère la nécessité d'agir."
+            )
 
-        st.markdown("#### Objectifs poursuivis")
+    elif sp_id == "objectifs":
         sync_widget_from_draft("objectifs")
         st.multiselect(
-            "Quels objectifs le dirigeant poursuit-il ?",
+            "Quels objectifs le dirigeant poursuit-il principalement ?",
             OBJECTIVE_DISPLAY_ORDER,
             key="w_objectifs",
             placeholder="Sélectionner un ou plusieurs objectifs",
             on_change=sync_draft_key,
             args=("objectifs",),
         )
-        selected_objectives = list(get_draft("objectifs") or [])
-        if selected_objectives:
-            st.markdown("#### Importance des objectifs")
-            st.caption("Sélectionne le niveau d’importance de chaque objectif. Le classement des risques est renforcé lorsque l’objectif est jugé très important ou prioritaire.")
+        selected = list(get_draft("objectifs") or [])
+        if not selected:
+            st.info("⚠️ Sélectionne au moins un objectif pour activer le scoring des risques.")
+        else:
+            st.success(
+                f"✅ {len(selected)} objectif(s) sélectionné(s). "
+                "Une page de pondération s'affichera à l'étape suivante."
+            )
+
+    elif sp_id == "poids":
+        selected = list(get_draft("objectifs") or [])
+        if not selected:
+            st.warning("Aucun objectif sélectionné. Reviens à la page précédente.")
+        else:
             st.markdown(
-                """
-                <div class="importance-help">
-                    <strong>Important</strong> : pondération normale ·
-                    <strong>Très important</strong> : renforcement modéré ·
-                    <strong>Prioritaire</strong> : renforcement fort des risques associés
-                </div>
-                """,
+                '<div class="importance-help">'
+                '<strong>Important</strong> : pondération normale &nbsp;·&nbsp; '
+                '<strong>Très important</strong> : renforcement modéré &nbsp;·&nbsp; '
+                '<strong>Prioritaire</strong> : renforcement fort des risques associés.'
+                '</div>',
                 unsafe_allow_html=True,
             )
-            for objective in selected_objectives:
+            for objective in selected:
                 st.markdown('<div class="importance-card">', unsafe_allow_html=True)
                 objective_weight_buttons(objective)
                 st.markdown('</div>', unsafe_allow_html=True)
-        else:
-            st.warning("Aucun risque ne sera activé tant qu’au moins un objectif n’aura pas été sélectionné et validé.")
 
-        st.markdown("#### Personnalisation du rapport")
+    elif sp_id == "rapport":
         c1, c2 = st.columns(2)
         with c1:
-            selectbox("Orientation souhaitée du rapport", "rapport_orientation", ["Équilibré", "Très pédagogique", "Synthétique et décisionnel", "Approfondi et technique"])
-            st.caption("Le choix modifie réellement le rapport exporté : longueur, vocabulaire, niveau d’explication et place du scoring.")
+            selectbox("Orientation du rapport exporté", "rapport_orientation",
+                      ["Équilibré", "Très pédagogique",
+                       "Synthétique et décisionnel", "Approfondi et technique"])
+            st.caption("Modifie la structure et le niveau de détail du rapport Word.")
         with c2:
-            selectbox("Niveau de détail attendu", "niveau_detail", ["Synthétique", "Détaillé", "Très détaillé"])
-        text_area_field("Objectif exprimé par le client avec ses propres mots", "objectif_libre", "Ex. transmettre progressivement à mon fils sans léser mes deux autres enfants")
-        text_area_field("Attentes particulières du client", "attentes_client", "Ex. éviter les conflits familiaux, protéger le conjoint, conserver le contrôle...")
-        text_area_field("Contraintes ou préférences exprimées", "contraintes_client", "Ex. refus d’ouvrir le capital, souhait de simplicité, besoin de revenus...")
-        text_area_field("Personnes à associer à la réflexion", "personnes_a_associer", "Ex. conjoint, enfants, notaire, expert-comptable, avocat...")
-        text_area_field("Observations libres du CGP", "observations", "Notes utiles pour contextualiser le rapport", height=110)
-        validate_buttons(step)
+            selectbox("Niveau de détail", "niveau_detail",
+                      ["Synthétique", "Détaillé", "Très détaillé"])
+        text_area_field(
+            "Objectif exprimé par le client (ses propres mots)", "objectif_libre",
+            "Ex. transmettre progressivement à mon fils sans léser mes autres enfants"
+        )
+        c1, c2 = st.columns(2)
+        with c1:
+            text_area_field("Attentes particulières du client", "attentes_client",
+                            "Ex. éviter les conflits, protéger le conjoint…")
+        with c2:
+            text_area_field("Contraintes ou préférences", "contraintes_client",
+                            "Ex. refus d'ouvrir le capital, souhait de simplicité…")
+        c1, c2 = st.columns(2)
+        with c1:
+            text_area_field("Personnes à associer à la réflexion", "personnes_a_associer",
+                            "Ex. conjoint, enfants, notaire, avocat…")
+        with c2:
+            text_area_field("Observations du CGP", "observations",
+                            "Notes de contexte utiles pour le rapport", height=90)
 
-    elif step == 2:
-        st.markdown("### Étape 2 – Diagnostic familial")
-        objectifs = selected_objectives_from_draft()
+    elif sp_id == "famille":
         c1, c2, c3 = st.columns(3)
         with c1:
-            number_input("Nombre d’enfants", "nb_enfants", min_value=0, max_value=12, step=1)
+            number_input("Nombre d'enfants", "nb_enfants", min_value=0, max_value=12, step=1)
         with c2:
             yes_no_unknown("Conjoint présent ?", "conjoint_present")
         with c3:
             yes_no_unknown("Famille recomposée ?", "famille_recomposee")
-
         if get_draft("conjoint_present") == YES:
-            yes_no_unknown("Le conjoint adhère-t-il au principe de transmission envisagé ?", "accord_conjoint", [UNKNOWN, YES, NO, UNCERTAIN])
-
-        if get_draft("nb_enfants") > 0 and "Transmettre l’entreprise" in objectifs:
-            st.markdown("#### Questions activées : transmission familiale")
-            yes_no_unknown("Un héritier repreneur est-il identifié ?", "heritier_repreneur", [UNKNOWN, YES, NO, UNCERTAIN])
-            if get_draft("heritier_repreneur") == YES and get_draft("nb_enfants") >= 2:
-                yes_no_unknown("Les autres héritiers sont-ils aussi impliqués dans l’entreprise ?", "autres_heritiers_actifs")
-                selectbox("Quelle est la volonté probable des héritiers non repreneurs ?", "volonte_non_repreneurs", [UNKNOWN, "Rester associés", "Sortir du capital", "Recevoir principalement une compensation", "Incertain / non abordé"])
-                yes_no_unknown("Une soulte (compensation financière) est-elle envisagée pour compenser les héritiers non repreneurs ?", "soulte_envisagee")
-                if get_draft("soulte_envisagee") == YES:
-                    yes_no_unknown("La capacité de financement de cette soulte est-elle validée ?", "capacite_financement_soulte")
-        else:
-            st.info("Les questions relatives au repreneur apparaissent uniquement si l’objectif « Transmettre l’entreprise » est sélectionné et si au moins un enfant est renseigné.")
-
-        if get_draft("nb_enfants") >= 2:
-            st.markdown("#### Dialogue familial")
-            yes_no_unknown("Un dialogue familial a-t-il déjà été organisé ?", "dialogue_familial")
-
+            st.markdown("<br>", unsafe_allow_html=True)
+            yes_no_unknown(
+                "Le conjoint adhère-t-il au projet de transmission ?",
+                "accord_conjoint", [UNKNOWN, YES, NO, UNCERTAIN]
+            )
+        nb = int(get_draft("nb_enfants") or 0)
+        obj_d = set(get_draft("objectifs") or [])
+        hints = []
+        if nb > 0 and "Transmettre l'entreprise" in obj_d:
+            hints.append("📌 Repreneur & transmission")
+        if nb >= 2:
+            hints.append("📌 Dialogue familial")
         if get_draft("conjoint_present") == YES:
-            st.markdown("#### Protection du conjoint et des proches")
-            st.caption("Ces questions sont prises en compte dans l’analyse dès qu’un conjoint est présent, même si l’objectif de protection n’a pas été sélectionné comme prioritaire.")
-            yes_no_unknown("Le conjoint dépend-il financièrement du dirigeant ou de l’entreprise ?", "conjoint_dependant")
-            yes_no_unknown("Un dispositif de protection du conjoint est-il déjà prévu ?", "protection_conjoint_prevue")
-            yes_no_unknown("Le régime matrimonial a-t-il été analysé ou adapté ?", "regime_matrimonial_adapte")
+            hints.append("📌 Protection du conjoint")
+        if nb >= 2 or get_draft("famille_recomposee") == YES:
+            hints.append("📌 Sécurisation successorale")
+        if hints:
+            st.caption("Pages qui s'ajouteront automatiquement : " + " · ".join(hints))
 
-        if get_draft("nb_enfants") >= 2 or get_draft("famille_recomposee") == YES:
-            st.markdown("#### Questions activées : sécurisation successorale")
-            yes_no_unknown("Une valorisation indépendante des titres a-t-elle été réalisée ou prévue ?", "valorisation_independante")
-            yes_no_unknown("Un audit civil et successoral a-t-il été réalisé avec un notaire ?", "audit_civil")
-        validate_buttons(step)
+    elif sp_id == "repreneur":
+        yes_no_unknown("Un héritier repreneur est-il identifié ?", "heritier_repreneur",
+                       [UNKNOWN, YES, NO, UNCERTAIN])
+        if get_draft("heritier_repreneur") == YES and int(get_draft("nb_enfants") or 0) >= 2:
+            st.divider()
+            yes_no_unknown(
+                "Les autres héritiers sont-ils aussi impliqués dans l'entreprise ?",
+                "autres_heritiers_actifs"
+            )
+            selectbox("Volonté probable des héritiers non repreneurs", "volonte_non_repreneurs",
+                      [UNKNOWN, "Rester associés", "Sortir du capital",
+                       "Recevoir principalement une compensation", "Incertain / non abordé"])
+            yes_no_unknown("Une soulte (compensation financière) est-elle envisagée ?",
+                           "soulte_envisagee")
+            if get_draft("soulte_envisagee") == YES:
+                yes_no_unknown(
+                    "La capacité de financement de la soulte est-elle validée ?",
+                    "capacite_financement_soulte"
+                )
 
-    elif step == 3:
-        st.markdown("### Étape 3 – Diagnostic patrimonial")
-        objectifs = selected_objectives_from_draft()
+    elif sp_id == "dialogue":
+        yes_no_unknown(
+            "Un dialogue familial a-t-il déjà été organisé entre les héritiers ?",
+            "dialogue_familial"
+        )
+        st.caption("Un dialogue précoce réduit fortement les risques de conflit successoral.")
+
+    elif sp_id == "conjoint":
+        st.caption("Ces questions sont prises en compte dès qu'un conjoint est présent.")
         c1, c2, c3 = st.columns(3)
         with c1:
-            number_input("Valeur estimée de l’entreprise (€)", "valeur_entreprise", min_value=0, step=100_000)
+            yes_no_unknown("Le conjoint dépend-il financièrement du dirigeant ?",
+                           "conjoint_dependant")
         with c2:
-            slider("Poids estimé de l’entreprise dans le patrimoine familial (%)", "poids_entreprise", 0, 100)
+            yes_no_unknown("Un dispositif de protection du conjoint est-il prévu ?",
+                           "protection_conjoint_prevue")
         with c3:
-            selectbox("Niveau d’actifs liquides hors entreprise", "actifs_liquides", [UNKNOWN, "Faible", "Moyen", "Élevé"])
+            yes_no_unknown("Le régime matrimonial a-t-il été analysé ou adapté ?",
+                           "regime_matrimonial_adapte")
 
+    elif sp_id == "succession_civ":
+        c1, c2 = st.columns(2)
+        with c1:
+            yes_no_unknown("Une valorisation indépendante des titres est-elle prévue ?",
+                           "valorisation_independante")
+        with c2:
+            yes_no_unknown(
+                "Un audit civil et successoral a-t-il été réalisé avec un notaire ?",
+                "audit_civil"
+            )
+
+    elif sp_id == "patrimoine":
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            number_input("Valeur estimée de l'entreprise (€)", "valeur_entreprise",
+                         min_value=0, step=100_000)
+        with c2:
+            slider("Poids de l'entreprise dans le patrimoine (%)", "poids_entreprise", 0, 100)
+        with c3:
+            selectbox("Actifs liquides hors entreprise", "actifs_liquides",
+                      [UNKNOWN, "Faible", "Moyen", "Élevé"])
         c4, c5 = st.columns(2)
         with c4:
-            selectbox("Niveau d’endettement personnel ou familial", "endettement_familial", [UNKNOWN, "Faible", "Moyen", "Élevé"])
+            selectbox("Endettement personnel ou familial", "endettement_familial",
+                      [UNKNOWN, "Faible", "Moyen", "Élevé"])
         with c5:
-            selectbox("Besoin de revenus réguliers pour la famille", "besoin_revenus_famille", [UNKNOWN, "Faible", "Moyen", "Élevé"])
+            selectbox("Besoin de revenus réguliers pour la famille", "besoin_revenus_famille",
+                      [UNKNOWN, "Faible", "Moyen", "Élevé"])
 
-        show_diversification = get_draft("poids_entreprise") >= 40 or "Diversifier le patrimoine" in objectifs
-        show_prevoyance = (
-            show_diversification
-            or get_draft("conjoint_present") == YES
-            or "Protéger le conjoint et les proches" in objectifs
-            or get_draft("besoin_revenus_famille") in ["Moyen", "Élevé"]
-            or get_draft("urgence_evenement") == YES
-        )
-        if show_diversification or show_prevoyance:
-            st.markdown("#### Questions activées : sécurité patrimoniale")
-            if show_diversification:
-                yes_no_unknown("Une diversification patrimoniale est-elle déjà organisée ?", "diversification")
-            if show_prevoyance:
-                yes_no_unknown("Une prévoyance ou une assurance décès est-elle prévue ?", "prevoyance")
-        else:
-            st.info("Les questions relatives à la diversification et à la prévoyance apparaissent selon le poids de l’entreprise, le besoin de revenus, la présence d’un conjoint ou l’existence d’une fragilité particulière.")
-        validate_buttons(step)
-
-    elif step == 4:
-        st.markdown("### Étape 4 – Diagnostic professionnel et gouvernance")
-        objectifs = selected_objectives_from_draft()
-        show_governance = (
-            "Conserver le contrôle familial" in objectifs
-            or get_draft("nb_enfants") >= 2
-            or get_draft("besoin_revenus_famille") in ["Moyen", "Élevé"]
-            or "Préserver l’équité entre les héritiers" in objectifs
-        )
-        if show_governance:
-            yes_no_unknown("Des clauses d’entrée, de sortie ou de cession des titres sont-elles prévues ?", "clauses_entree_sortie")
-            yes_no_unknown("La gouvernance de la holding est-elle formalisée ?", "gouvernance_formalisee")
-            yes_no_unknown("La holding réunira-t-elle des associés actifs et des associés non actifs ?", "associes_actifs_passifs")
-            yes_no_unknown("Une politique de distribution de dividendes est-elle déjà définie ?", "politique_dividendes_definie")
-        else:
-            st.info("Les questions de gouvernance renforcée apparaissent si l’objectif de contrôle, l’équité familiale, le besoin de revenus ou la configuration familiale l’exigent.")
-
-        st.markdown("#### Continuité opérationnelle")
-        yes_no_unknown("L’entreprise est-elle fortement dépendante du dirigeant actuel ?", "entreprise_dependante_dirigeant")
-
-        if get_draft("heritier_repreneur") in [YES, UNCERTAIN]:
-            st.markdown("#### Questions activées : succession managériale")
-            yes_no_unknown("Le successeur est-il préparé à reprendre la direction ?", "successeur_prepare")
-            yes_no_unknown("Un calendrier de transmission du pouvoir est-il prévu ?", "calendrier_transmission")
-        validate_buttons(step)
-
-    elif step == 5:
-        st.markdown("### Étape 5 – Fiscalité, Dutreil et suivi")
-        objectifs = selected_objectives_from_draft()
-        if "Optimiser la fiscalité" in objectifs or get_draft("valeur_entreprise") >= 1_000_000:
-            yes_no_unknown("Une simulation fiscale préalable a-t-elle été réalisée ou prévue ?", "simulation_fiscale")
-            yes_no_unknown("Un Pacte Dutreil est-il envisagé ou déjà mis en place ?", "pacte_dutreil")
-            if get_draft("pacte_dutreil") == YES:
-                st.markdown("#### Questions activées : vigilance Dutreil")
-                yes_no_unknown("La qualification de holding animatrice est-elle établie ?", "holding_animatrice", [UNKNOWN, YES, NO, UNCERTAIN])
-                yes_no_unknown("Un audit Dutreil a-t-il été réalisé ou programmé ?", "audit_dutreil")
-                yes_no_unknown("Un suivi des engagements de conservation est-il prévu ?", "suivi_engagements")
-        else:
-            st.info("Les questions fiscales détaillées apparaissent si l’objectif fiscal est sélectionné ou si la valeur de l’entreprise atteint 1 M€.")
-
-        st.markdown("#### Suivi de la stratégie")
-        yes_no_unknown("Une revue annuelle de la stratégie patrimoniale est-elle prévue ?", "suivi_annuel")
-        yes_no_unknown("Un rapport écrit de diagnostic et de recommandation est-il prévu ?", "formalisation_rapport")
-        validate_buttons(step)
-
-    elif step == 6:
-        st.markdown("### Étape 6 – Synthèse")
-        st.info("Cette synthèse est calculée uniquement à partir des réponses validées.")
-        gaps = missing_data(validated_answers)
-        if gaps:
-            st.warning("Informations complémentaires à recueillir :")
-            for g in gaps:
-                st.write(f"- {g}")
-        if detected_df.empty:
-            st.success("Aucun risque significatif n’est détecté à partir des réponses actuellement validées.")
-        else:
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Risques détectés", len(detected_df))
-            c2.metric("Risques critiques", int((detected_df["Niveau"] == "Critique").sum()))
-            c3.metric("Score maximal", int(detected_df["Score"].max()))
-            c4.metric("Risque principal", detected_df.iloc[0]["Risque"])
-            st.dataframe(detected_df[["Objectif", "Risque", "Probabilité", "Gravité", "Score", "Niveau", "Pondération objectif"]], use_container_width=True, hide_index=True)
-        c1, c2, _ = st.columns([1.4, 2.2, 4.4])
+    elif sp_id == "securite_pat":
+        c1, c2 = st.columns(2)
         with c1:
-            if st.button("← Étape précédente", key="questionnaire_step6_prev"):
-                st.session_state.current_step = 5
-                st.rerun()
+            yes_no_unknown("Une diversification patrimoniale est-elle déjà organisée ?",
+                           "diversification")
         with c2:
-            if st.button("Voir les résultats et solutions →", key="questionnaire_to_results", type="primary"):
-                st.session_state.app_page = "Résultats et solutions"
-                st.rerun()
+            yes_no_unknown("Une prévoyance ou assurance décès est-elle prévue ?", "prevoyance")
+
+    elif sp_id == "gouvernance":
+        c1, c2 = st.columns(2)
+        with c1:
+            yes_no_unknown("Des clauses d'entrée/sortie des titres sont-elles prévues ?",
+                           "clauses_entree_sortie")
+            yes_no_unknown("La gouvernance de la holding est-elle formalisée ?",
+                           "gouvernance_formalisee")
+        with c2:
+            yes_no_unknown("La holding réunira-t-elle des associés actifs et non actifs ?",
+                           "associes_actifs_passifs")
+            yes_no_unknown("Une politique de distribution de dividendes est-elle définie ?",
+                           "politique_dividendes_definie")
+
+    elif sp_id == "continuite":
+        yes_no_unknown(
+            "L'entreprise est-elle fortement dépendante du dirigeant actuel ?",
+            "entreprise_dependante_dirigeant"
+        )
+
+    elif sp_id == "succession_mgmt":
+        c1, c2 = st.columns(2)
+        with c1:
+            yes_no_unknown("Le successeur est-il préparé à reprendre la direction ?",
+                           "successeur_prepare")
+        with c2:
+            yes_no_unknown("Un calendrier de transmission du pouvoir est-il prévu ?",
+                           "calendrier_transmission")
+
+    elif sp_id == "fiscalite":
+        c1, c2 = st.columns(2)
+        with c1:
+            yes_no_unknown("Une simulation fiscale a-t-elle été réalisée ou programmée ?",
+                           "simulation_fiscale")
+        with c2:
+            yes_no_unknown("Un Pacte Dutreil est-il envisagé ou déjà mis en place ?",
+                           "pacte_dutreil")
+        if get_draft("pacte_dutreil") == YES:
+            st.info("📌 Une page « Vigilance Dutreil » va s'afficher automatiquement.")
+
+    elif sp_id == "dutreil":
+        st.caption(
+            "Le Pacte Dutreil est un dispositif sensible aux conditions strictes. "
+            "Ces questions identifient les points de vigilance."
+        )
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            yes_no_unknown("La qualification de holding animatrice est-elle établie ?",
+                           "holding_animatrice", [UNKNOWN, YES, NO, UNCERTAIN])
+        with c2:
+            yes_no_unknown("Un audit Dutreil a-t-il été réalisé ou programmé ?", "audit_dutreil")
+        with c3:
+            yes_no_unknown("Un suivi des engagements de conservation est-il prévu ?",
+                           "suivi_engagements")
+
+    elif sp_id == "suivi":
+        c1, c2 = st.columns(2)
+        with c1:
+            yes_no_unknown("Une revue annuelle de la stratégie patrimoniale est-elle prévue ?",
+                           "suivi_annuel")
+        with c2:
+            yes_no_unknown(
+                "Un rapport écrit de diagnostic et de recommandation est-il prévu ?",
+                "formalisation_rapport"
+            )
+
+    elif sp_id == "synthese":
+        n_valid = len(st.session_state.validated_steps.intersection({1, 2, 3, 4, 5}))
+        if n_valid == 0:
+            st.warning(
+                "⚠️ Aucune section validée. Complète et valide les sections "
+                "du questionnaire pour voir le diagnostic."
+            )
+        else:
+            gaps = missing_data(validated_answers)
+            if gaps:
+                with st.expander(
+                    f"⚠️ {len(gaps)} information(s) à compléter pour affiner le diagnostic"
+                ):
+                    for g in gaps:
+                        st.write(f"- {g}")
+            if detected_df.empty:
+                st.success("✅ Aucun risque détecté sur la base des réponses validées.")
+            else:
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Risques détectés", len(detected_df))
+                c2.metric("Critiques", int((detected_df["Niveau"] == "Critique").sum()))
+                c3.metric("Élevés", int((detected_df["Niveau"] == "Élevé").sum()))
+                c4.metric("Score max", int(detected_df["Score"].max()))
+                st.dataframe(
+                    detected_df[["Objectif", "Risque", "Score", "Niveau"]],
+                    use_container_width=True, hide_index=True,
+                )
+
+
+def render_nav_buttons(current_idx: int, active_pages: List[Dict]) -> None:
+    current = active_pages[current_idx]
+    is_last = current_idx + 1 >= len(active_pages)
+
+    if current["id"] == "synthese":
+        if st.button("Voir les résultats complets →", type="primary",
+                     key="synth_to_results", use_container_width=True):
+            st.session_state.app_page = "Résultats et solutions"
+            st.rerun()
+        return
+
+    if not is_last:
+        next_pg = active_pages[current_idx + 1]
+        crosses = current["step"] is not None and next_pg["step"] != current["step"]
+    else:
+        crosses = current["step"] is not None
+
+    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+    c1, _, c3 = st.columns([1.5, 4, 1.5])
+    with c1:
+        if current_idx > 0:
+            if st.button("← Précédent", key=f"prev_{current['id']}"):
+                navigate_prev(current_idx, active_pages)
+    with c3:
+        if is_last:
+            btn_label = "Terminer →"
+        elif crosses:
+            btn_label = "Valider & continuer →"
+        else:
+            btn_label = "Suivant →"
+        if st.button(btn_label, type="primary", key=f"next_{current['id']}"):
+            navigate_next(current_idx, active_pages)
+
+
+# ─── Sidebar ─────────────────────────────────────────────────────────────────
+
+page = st.session_state.get("app_page", VIEWS[0])
+
+with st.sidebar:
+    st.markdown("### Navigation")
+    _btn_icons = {
+        "Questionnaire adaptatif": "📋",
+        "Résultats et solutions": "📊",
+        "Exporter": "⬇️",
+    }
+    for _v in VIEWS[:3]:
+        _active = _v == page
+        _lbl = (_btn_icons.get(_v, "") + " " + _v).strip()
+        if st.button(_lbl, key=f"nav_{safe_key(_v)}", use_container_width=True,
+                     type="primary" if _active else "secondary"):
+            st.session_state.app_page = _v
+            st.rerun()
+
+    st.divider()
+
+    _draft = st.session_state.draft_answers
+    _active_pages = get_active_subpages(_draft)
+    _current_sp = st.session_state.get("current_subpage", "dossier")
+    if _current_sp not in [p["id"] for p in _active_pages]:
+        _current_sp = _active_pages[0]["id"] if _active_pages else "dossier"
+    _current_idx = get_subpage_idx(_current_sp, _active_pages)
+
+    if page == "Questionnaire adaptatif":
+        _pct = _current_idx / max(len(_active_pages) - 1, 1) * 100
+        st.markdown(
+            f'<div style="font-size:.76rem;color:#0369a1;font-weight:600;margin-bottom:4px">'
+            f'Page {_current_idx + 1} / {len(_active_pages)}</div>'
+            f'<div style="background:#bae6fd;border-radius:999px;height:6px;margin-bottom:10px">'
+            f'<div style="background:linear-gradient(90deg,#38bdf8,#22c55e);border-radius:999px;'
+            f'height:6px;width:{_pct:.0f}%"></div></div>',
+            unsafe_allow_html=True,
+        )
+        _prev_step: Any = object()
+        for _i, _sp in enumerate(_active_pages):
+            if _sp["step"] != _prev_step:
+                _prev_step = _sp["step"]
+                _sname = SECTION_NAMES.get(_sp["step"], "Synthèse")
+                _step_done = _sp["step"] in st.session_state.validated_steps if _sp["step"] else False
+                st.markdown(
+                    f"<div style='font-size:.68rem;font-weight:700;color:#0369a1;"
+                    f"text-transform:uppercase;letter-spacing:.05em;margin:8px 0 2px 0'>"
+                    f"{'✅' if _step_done else '◦'} {_sname}</div>",
+                    unsafe_allow_html=True,
+                )
+            _is_cur = _sp["id"] == _current_sp
+            _is_done = _i < _current_idx
+            _dot = "▶" if _is_cur else ("✓" if _is_done else "·")
+            _color = "#0ea5e9" if _is_cur else ("#10b981" if _is_done else "#9ca3af")
+            _wt = "700" if _is_cur else "400"
+            st.markdown(
+                f"<div style='font-size:.77rem;color:{_color};font-weight:{_wt};"
+                f"padding:1px 0 1px 10px;line-height:1.65'>{_dot} {_sp['title']}</div>",
+                unsafe_allow_html=True,
+            )
+    else:
+        _n_done = len(st.session_state.validated_steps.intersection({1, 2, 3, 4, 5}))
+        st.markdown(
+            f'<div style="font-size:.76rem;color:#0369a1;font-weight:600;margin-bottom:4px">'
+            f'{_n_done} / 5 sections validées</div>'
+            f'<div style="background:#bae6fd;border-radius:999px;height:6px;margin-bottom:10px">'
+            f'<div style="background:linear-gradient(90deg,#38bdf8,#22c55e);border-radius:999px;'
+            f'height:6px;width:{int(_n_done/5*100)}%"></div></div>',
+            unsafe_allow_html=True,
+        )
+
+    st.divider()
+    for _v in VIEWS[3:]:
+        _active = _v == page
+        if st.button(_v, key=f"nav_{safe_key(_v)}", use_container_width=True,
+                     type="primary" if _active else "secondary"):
+            st.session_state.app_page = _v
+            st.rerun()
+
+    st.divider()
+    if st.button("🔄 Réinitialiser le diagnostic", type="secondary", use_container_width=True):
+        reset_app()
+        st.session_state.setdefault("current_subpage", "dossier")
+        st.rerun()
+    st.caption("Les réponses ne modifient pas les résultats tant qu'elles ne sont pas validées.")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PAGES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+if page == "Questionnaire adaptatif":
+    draft = st.session_state.draft_answers
+    active_pages = get_active_subpages(draft)
+
+    current_sp = st.session_state.get("current_subpage", "dossier")
+    active_ids = [p["id"] for p in active_pages]
+    if current_sp not in active_ids:
+        current_sp = active_ids[0] if active_ids else "dossier"
+        st.session_state.current_subpage = current_sp
+
+    current_idx = get_subpage_idx(current_sp, active_pages)
+    current_page_def = active_pages[current_idx]
+
+    if st.session_state.get("nav_error"):
+        st.error(st.session_state.nav_error)
+
+    pct_main = current_idx / max(len(active_pages) - 1, 1) * 100
+    st.markdown(
+        f'<div style="font-size:.75rem;color:#0369a1;font-weight:600;margin-bottom:4px">'
+        f'Page {current_idx+1} / {len(active_pages)}</div>'
+        f'<div style="background:#bae6fd;border-radius:999px;height:5px;margin-bottom:14px">'
+        f'<div style="background:linear-gradient(90deg,#38bdf8,#22c55e);border-radius:999px;'
+        f'height:5px;width:{pct_main:.0f}%"></div></div>',
+        unsafe_allow_html=True,
+    )
+
+    render_page_header(current_page_def)
+    render_subpage(current_sp)
+    render_nav_buttons(current_idx, active_pages)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PAGE : Résultats et solutions
+# ═══════════════════════════════════════════════════════════════════════════════
 
 elif page == "Résultats et solutions":
     st.subheader("Résultats et solutions proposées")
-    st.caption("Résultats calculés uniquement à partir des réponses validées. Pour intégrer une modification, retourne dans le questionnaire et valide l’étape concernée.")
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Risques détectés", len(detected_df))
-    k2.metric("Risques inexistants", len(zero_df))
-    k3.metric("Critiques", int((detected_df["Niveau"] == "Critique").sum()) if not detected_df.empty else 0)
-    k4.metric("Risques élevés", int((detected_df["Niveau"] == "Élevé").sum()) if not detected_df.empty else 0)
+    st.caption("Calculés uniquement à partir des réponses validées.")
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Risques détectés", len(detected_df))
+    c2.metric("Inexistants", len(zero_df))
+    c3.metric("Critiques",
+              int((detected_df["Niveau"] == "Critique").sum()) if not detected_df.empty else 0)
+    c4.metric("Élevés",
+              int((detected_df["Niveau"] == "Élevé").sum()) if not detected_df.empty else 0)
 
     gaps = missing_data(validated_answers)
     if gaps:
-        with st.expander("Informations manquantes pouvant affiner le diagnostic", expanded=True):
+        with st.expander(f"⚠️ {len(gaps)} information(s) manquante(s) pour affiner le diagnostic"):
             for g in gaps:
                 st.write(f"- {g}")
 
     if not detected_df.empty:
-        st.markdown("### Matrice des risques")
+        section_card("Visualisation des scores", "📊")
         chart_df = detected_df[["Risque", "Score"]].sort_values("Score", ascending=True)
-        st.bar_chart(chart_df, x="Risque", y="Score", horizontal=True)
+        st.bar_chart(chart_df, x="Risque", y="Score", horizontal=True, color="#0ea5e9")
 
-    st.markdown("### Classement détaillé")
-    st.dataframe(df[["Objectif", "Risque", "Probabilité", "Gravité", "Score", "Niveau", "Pondération objectif", "Signaux retenus"]], use_container_width=True, hide_index=True, column_config={"Signaux retenus": st.column_config.TextColumn(width="large")})
+    section_card("Tableau des risques", "📋")
+    st.dataframe(
+        df[["Objectif", "Risque", "Probabilité", "Gravité", "Score",
+            "Niveau", "Pondération objectif", "Signaux retenus"]],
+        use_container_width=True, hide_index=True,
+        column_config={"Signaux retenus": st.column_config.TextColumn(width="large")},
+    )
 
-    st.markdown("### Solutions envisagées par risque détecté")
+    section_card("Solutions et outils par risque détecté", "🛠️")
     if detected_df.empty:
-        st.success("Aucun risque détecté. Sélectionne les objectifs, complète le questionnaire, puis valide les étapes concernées.")
+        st.info("Aucun risque détecté. Complète le questionnaire et valide les sections.")
     else:
         for _, row in detected_df.iterrows():
             definition = RISK_DEFINITIONS[row["Code"]]
             color = PRIORITY_COLORS[row["Niveau"]]
             body = f"""
-            <p>{priority_badge(row['Niveau'])} &nbsp; <strong>Score :</strong> {int(row['Score'])} &nbsp; <strong>Probabilité :</strong> {score_to_label(int(row['Probabilité']))} &nbsp; <strong>Gravité :</strong> {score_to_label(int(row['Gravité']))}</p>
+            <p>{priority_badge(row['Niveau'])} &nbsp;
+               <strong>Score :</strong> {int(row['Score'])} &nbsp;
+               <strong>Probabilité :</strong> {score_to_label(int(row['Probabilité']))} &nbsp;
+               <strong>Gravité :</strong> {score_to_label(int(row['Gravité']))}</p>
             <p><strong>Objectif concerné :</strong> {definition.objectif}</p>
             <p><strong>Pourquoi ce risque est activé :</strong></p>
             {render_list(evidence.get(row['Code'], []))}
@@ -2058,112 +2237,142 @@ elif page == "Résultats et solutions":
               <div><strong>Outils à étudier</strong>{render_list(definition.outils)}</div>
               <div><strong>Actions préventives</strong>{render_list(definition.actions_preventives)}</div>
             </div>
-            <p><strong>Pourquoi ces outils sont proposés :</strong></p>
+            <p><strong>Justification des outils :</strong></p>
             {render_tool_justifications(row['Code'])}
             <p><strong>Professionnels à mobiliser :</strong> {', '.join(definition.professionnels)}</p>
             """
             card(definition.libelle, body, accent=color)
 
-    st.markdown("### Recommandations hiérarchisées en trois temps")
+    section_card("Plan d'action hiérarchisé", "🗓️")
     plan_df = build_action_plan(df)
     if plan_df.empty:
-        st.info("Aucun plan d’action n’est généré tant qu’aucun risque n’est détecté.")
+        st.info("Le plan d'action apparaît dès que des risques sont détectés.")
     else:
         for horizon in ["Actions immédiates", "Actions à moyen terme", "Suivi annuel"]:
-            horizon_df = plan_df[plan_df["Horizon"] == horizon]
-            if not horizon_df.empty:
+            hdf = plan_df[plan_df["Horizon"] == horizon]
+            if not hdf.empty:
                 with st.expander(horizon, expanded=(horizon == "Actions immédiates")):
                     st.dataframe(
-                        horizon_df[["Priorité", "Action", "Risques concernés", "Professionnels"]],
-                        use_container_width=True,
-                        hide_index=True,
+                        hdf[["Priorité", "Action", "Risques concernés", "Professionnels"]],
+                        use_container_width=True, hide_index=True,
                         column_config={
                             "Action": st.column_config.TextColumn(width="large"),
                             "Professionnels": st.column_config.TextColumn(width="medium"),
                         },
                     )
 
-    with st.expander("Risques inexistants — non détectés au vu des réponses validées"):
-        st.dataframe(zero_df[["Objectif", "Risque", "Niveau"]], use_container_width=True, hide_index=True)
+    with st.expander("Risques non détectés (au vu des réponses validées)"):
+        st.dataframe(zero_df[["Objectif", "Risque", "Niveau"]],
+                     use_container_width=True, hide_index=True)
 
     render_view_navigation("Résultats et solutions")
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# PAGE : Exporter
+# ═══════════════════════════════════════════════════════════════════════════════
+
 elif page == "Exporter":
-    st.subheader("Exporter")
-    st.caption("Cette page génère un rapport Word structuré et une matrice Excel lisible à partir des réponses validées, des risques détectés et des solutions envisagées.")
+    st.subheader("Exporter le diagnostic")
 
-    if len(st.session_state.validated_steps.intersection({1, 2, 3, 4, 5})) == 0:
-        st.warning("Aucune étape n’a encore été validée. Le rapport peut être généré, mais il sera vide ou peu exploitable.")
+    n_valid = len(st.session_state.validated_steps.intersection({1, 2, 3, 4, 5}))
+    if n_valid == 0:
+        st.warning("⚠️ Aucune section validée — le rapport sera vide. Complète d'abord le questionnaire.")
+    elif n_valid < 3:
+        st.info(f"ℹ️ {n_valid}/5 sections validées. Tu peux exporter, mais le diagnostic sera partiel.")
 
-    c1, c2 = st.columns(2)
+    section_card("Télécharger", "⬇️")
+    c1, c2, c3 = st.columns(3)
     with c1:
+        st.markdown("**📄 Rapport Word**")
+        st.caption("Rapport structuré adapté à l'orientation choisie.")
         try:
-            docx_data = create_docx_report(validated_answers.get("client_name") or "", validated_answers, df, evidence)
+            docx_data = create_docx_report(
+                validated_answers.get("client_name") or "", validated_answers, df, evidence
+            )
             st.download_button(
-                "Télécharger le rapport",
-                data=docx_data,
+                "Télécharger le .docx", data=docx_data,
                 file_name="rapport_diagnostic_holding_familiale.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                type="primary",
+                type="primary", use_container_width=True,
             )
         except Exception as exc:
-            st.error(f"Export Word indisponible : {exc}")
+            st.error(f"Indisponible : {exc}")
     with c2:
+        st.markdown("**📊 Matrice Excel**")
+        st.caption("Deux onglets : matrice des risques + plan d'action.")
         try:
             xlsx_data = create_xlsx_matrix(df)
             st.download_button(
-                "Télécharger la matrice des risques",
-                data=xlsx_data,
+                "Télécharger le .xlsx", data=xlsx_data,
                 file_name="matrice_risques_holding_familiale.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
             )
         except Exception as exc:
-            st.error(f"Export Excel indisponible : {exc}")
+            st.error(f"Indisponible : {exc}")
+    with c3:
+        st.markdown("**📝 Rapport Markdown**")
+        st.caption("Version texte brut compatible Obsidian, Notion ou VS Code.")
+        try:
+            md_text = markdown_report(
+                validated_answers.get("client_name") or "", validated_answers, df
+            )
+            st.download_button(
+                "Télécharger le .md", data=md_text.encode("utf-8"),
+                file_name="rapport_diagnostic_holding_familiale.md",
+                mime="text/markdown", use_container_width=True,
+            )
+        except Exception as exc:
+            st.error(f"Indisponible : {exc}")
 
-    st.markdown("### Contenu du rapport")
+    st.divider()
     orientation = validated_answers.get("rapport_orientation", "Équilibré")
-    st.write(f"Orientation sélectionnée : **{orientation}**")
-    st.info("Le contenu du rapport varie selon l’orientation : le format synthétique privilégie les décisions et le top des risques ; le format pédagogique explique les outils et les enjeux avec un vocabulaire plus accessible ; le format technique détaille le scoring, les signaux retenus et les validations professionnelles.")
-
-    plan_preview_df = build_action_plan(df)
-    if not plan_preview_df.empty:
-        st.markdown("### Aperçu du plan d’action hiérarchisé")
-        st.dataframe(
-            plan_preview_df,
-            use_container_width=True,
-            hide_index=True,
-            column_config={"Action": st.column_config.TextColumn(width="large")},
-        )
+    section_card(f"Contenu du rapport — Orientation : {orientation}", "ℹ️")
+    st.info(
+        "**Synthétique** : risques prioritaires et décisions uniquement.  \n"
+        "**Pédagogique** : explications accessibles, lexique, pédagogie famille.  \n"
+        "**Équilibré** : analyse complète avec scoring et plan d'action.  \n"
+        "**Technique** : scoring détaillé, signaux retenus, validations professionnelles."
+    )
 
     if not detected_df.empty:
-        st.markdown("### Aperçu synthétique des risques détectés")
+        section_card("Aperçu — Risques détectés", "📋")
         st.dataframe(
-            detected_df[["Objectif", "Risque", "Score", "Niveau", "Outils à étudier", "Justification des outils", "Actions préventives"]],
-            use_container_width=True,
-            hide_index=True,
+            detected_df[["Objectif", "Risque", "Score", "Niveau",
+                          "Outils à étudier", "Actions préventives"]],
+            use_container_width=True, hide_index=True,
             column_config={
                 "Outils à étudier": st.column_config.TextColumn(width="large"),
-                "Justification des outils": st.column_config.TextColumn(width="large"),
                 "Actions préventives": st.column_config.TextColumn(width="large"),
             },
         )
-    else:
-        st.info("Aucun risque n’est détecté à partir des réponses validées.")
+
+    plan_preview_df = build_action_plan(df)
+    if not plan_preview_df.empty:
+        section_card("Aperçu — Plan d'action", "🗓️")
+        st.dataframe(
+            plan_preview_df, use_container_width=True, hide_index=True,
+            column_config={"Action": st.column_config.TextColumn(width="large")},
+        )
 
     render_view_navigation("Exporter")
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# PAGE : Règles de décision
+# ═══════════════════════════════════════════════════════════════════════════════
+
 elif page == "Règles de décision":
-    st.subheader("Règles de décision")
-    st.write("L’algorithme est un système expert transparent : chaque réponse validée ajoute des points à certains risques. Aucun signal = niveau Inexistant.")
+    st.subheader("Règles de décision du système expert")
+    st.write("Chaque réponse validée ajoute des points à certains risques. Aucun signal = niveau Inexistant.")
     st.code("""
-SI une étape n’est pas validée
+SI une section n'est pas validée
 ALORS ses réponses ne sont pas utilisées dans le scoring.
 
-SI aucun objectif n’est validé
+SI aucun objectif n'est validé
 ALORS tous les risques restent à 0.
 
-SI un objectif est pondéré comme « Très important » ou « Prioritaire »
-ALORS les risques associés à cet objectif sont renforcés dans le scoring.
+SI un objectif est pondéré « Très important » ou « Prioritaire »
+ALORS les risques associés sont renforcés dans le scoring.
 
 SI le contrôle familial est recherché ET plusieurs héritiers existent
 ALORS le risque de dilution augmente.
@@ -2171,36 +2380,65 @@ ALORS le risque de dilution augmente.
 SI un enfant reprend ET les autres héritiers ne sont pas impliqués
 ALORS le risque de conflit repreneur / non repreneurs augmente.
 
-SI une soulte est envisagée MAIS son financement n’est pas validé
+SI une soulte est envisagée MAIS son financement n'est pas validé
 ALORS le risque de liquidité augmente fortement.
 
 SI un Pacte Dutreil est envisagé ET la holding animatrice est incertaine
 ALORS le risque de remise en cause du Dutreil augmente fortement.
 
-SI le conjoint dépend financièrement du dirigeant ET qu’aucune protection n’est prévue
+SI le conjoint dépend financièrement du dirigeant ET aucune protection n'est prévue
 ALORS le risque de fragilisation du conjoint augmente.
-    """.strip(), language="text")
-    rules_export = {code: {"objectif": d.objectif, "risque": d.libelle, "gravite_base": d.gravite_base, "outils": d.outils, "justification_des_outils": get_tool_justifications(code), "actions_preventives": d.actions_preventives, "professionnels": d.professionnels} for code, d in RISK_DEFINITIONS.items()}
-    st.download_button("Télécharger le dictionnaire des risques JSON", data=json.dumps(rules_export, ensure_ascii=False, indent=2).encode("utf-8"), file_name="dictionnaire_risques_holding_familiale.json", mime="application/json")
-    st.json(rules_export)
 
+SI nb_enfants = 0 ET objectif = Transmettre l'entreprise
+ALORS le risque successeur augmente (aucun successeur identifiable).
+
+SI famille recomposée
+ALORS risques de conflit héritiers, contestation et conjoint augmentent.
+
+SI valeur entreprise >= 5 M€
+ALORS enjeux fiscaux, Dutreil et contestation activés même hors objectif déclaré.
+    """.strip(), language="text")
+    rules_export = {
+        code: {
+            "objectif": d.objectif,
+            "risque": d.libelle,
+            "gravite_base": d.gravite_base,
+            "outils": d.outils,
+            "justification_des_outils": get_tool_justifications(code),
+            "actions_preventives": d.actions_preventives,
+            "professionnels": d.professionnels,
+        }
+        for code, d in RISK_DEFINITIONS.items()
+    }
+    st.download_button(
+        "Télécharger le dictionnaire des risques (JSON)",
+        data=json.dumps(rules_export, ensure_ascii=False, indent=2).encode("utf-8"),
+        file_name="dictionnaire_risques_holding_familiale.json",
+        mime="application/json",
+    )
+    st.json(rules_export)
     render_view_navigation("Règles de décision")
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# PAGE : Debug
+# ═══════════════════════════════════════════════════════════════════════════════
+
 elif page == "Debug validation":
-    st.subheader("Debug validation : vérifier l’enregistrement des réponses")
-    st.write("Cette vue distingue les réponses en cours de saisie des réponses validées et réellement utilisées pour le scoring.")
+    st.subheader("Debug — Vérification des réponses")
+    st.caption("Vue technique : distingue les réponses en cours et les réponses validées utilisées pour le scoring.")
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("### Réponses en cours de saisie")
         st.json(st.session_state.get("draft_answers", {}))
     with c2:
-        st.markdown("### Réponses validées utilisées pour les résultats")
+        st.markdown("### Réponses validées (scoring)")
         st.json(validated_answers)
-    st.markdown("### Étapes validées")
+    st.markdown("### Sections validées")
     st.write(sorted(list(st.session_state.validated_steps)))
-    st.markdown("### Scores calculés sur réponses validées")
-    st.dataframe(df[["Risque", "Probabilité", "Gravité", "Score", "Niveau", "Signaux retenus"]], use_container_width=True, hide_index=True, column_config={"Signaux retenus": st.column_config.TextColumn(width="large")})
-
-
-if page == "Debug validation":
+    st.markdown("### Scores calculés")
+    st.dataframe(
+        df[["Risque", "Probabilité", "Gravité", "Score", "Niveau", "Signaux retenus"]],
+        use_container_width=True, hide_index=True,
+        column_config={"Signaux retenus": st.column_config.TextColumn(width="large")},
+    )
     render_view_navigation("Debug validation")
