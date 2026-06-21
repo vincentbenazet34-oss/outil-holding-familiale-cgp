@@ -812,6 +812,110 @@ def missing_data(a: Dict) -> List[str]:
     if a.get("pacte_dutreil") == YES and a.get("holding_animatrice") == UNKNOWN:
         gaps.append("Qualification de holding animatrice non renseignée (Pacte Dutreil en cours).")
     return gaps
+def detect_contradictions(a: Dict) -> List[Dict]:
+    """Détecte les incohérences entre les réponses du questionnaire.
+    Retourne une liste de dicts {msg, detail, severity} (warning ou critical)."""
+    c = []
+    objectifs = set(a.get("objectifs") or [])
+    nb_enfants = int(a.get("nb_enfants") or 0)
+    valeur = int(a.get("valeur_entreprise") or 0)
+    poids = int(a.get("poids_entreprise") or 0)
+    horizon = a.get("horizon_transmission") or ""
+
+    # ── Objectif vs situation ──────────────────────────────────────────────────
+    if "Protéger le conjoint et les proches" in objectifs and a.get("conjoint_present") == NO:
+        c.append({
+            "msg": "Objectif « Protéger le conjoint » mais aucun conjoint déclaré",
+            "detail": "Cet objectif ne peut pas être activé sans conjoint présent. À clarifier avec le client.",
+            "severity": "warning",
+        })
+
+    if "Préserver l'équité entre les héritiers" in objectifs and nb_enfants <= 1:
+        c.append({
+            "msg": "Objectif « Équité entre héritiers » avec un seul enfant",
+            "detail": "L'équité entre héritiers n'est pertinente qu'avec au moins 2 héritiers.",
+            "severity": "warning",
+        })
+
+    if "Transmettre l'entreprise" in objectifs and a.get("heritier_repreneur") == NO:
+        c.append({
+            "msg": "Objectif de transmission mais aucun repreneur identifié",
+            "detail": "Sans successeur désigné, la transmission reste bloquée. Envisager un repreneur externe ou une cession.",
+            "severity": "critical",
+        })
+
+    if "Conserver le contrôle familial" in objectifs and a.get("heritier_repreneur") == NO and nb_enfants == 0:
+        c.append({
+            "msg": "Objectif « Contrôle familial » sans héritier ni repreneur",
+            "detail": "Le contrôle familial ne peut se pérenniser sans successeur dans la famille.",
+            "severity": "warning",
+        })
+
+    # ── Calendrier vs préparation ──────────────────────────────────────────────
+    horizon_court = a.get("calendrier_transmission") in ["Moins d'1 an", "1 à 3 ans"]
+    if horizon_court and a.get("successeur_prepare") == NO:
+        c.append({
+            "msg": "Transmission prévue sous 3 ans mais successeur non préparé",
+            "detail": "Un délai aussi court avec un successeur non prêt expose l'entreprise à un risque opérationnel majeur.",
+            "severity": "critical",
+        })
+
+    if horizon_court and a.get("simulation_fiscale") == NO:
+        c.append({
+            "msg": "Horizon court mais aucune simulation fiscale réalisée",
+            "detail": "Sans optimisation fiscale préalable, la transmission peut générer une charge fiscale évitable.",
+            "severity": "critical",
+        })
+
+    if horizon_court and a.get("dialogue_familial") == NO and nb_enfants >= 2:
+        c.append({
+            "msg": "Transmission imminente sans dialogue familial organisé",
+            "detail": "L'absence de concertation familiale en amont multiplie les risques de conflit.",
+            "severity": "warning",
+        })
+
+    # ── Dutreil ───────────────────────────────────────────────────────────────
+    if a.get("pacte_dutreil") == YES and a.get("holding_animatrice") == NO:
+        c.append({
+            "msg": "Pacte Dutreil envisagé mais holding non animatrice",
+            "detail": "Le régime Dutreil exige une holding animatrice. L'exonération de 75 % serait refusée.",
+            "severity": "critical",
+        })
+
+    if "Optimiser la fiscalité" in objectifs and valeur >= 1_500_000 and a.get("pacte_dutreil") in [NO, UNKNOWN]:
+        c.append({
+            "msg": "Valeur élevée (≥ 1,5 M€) sans Pacte Dutreil envisagé",
+            "detail": f"Avec {valeur:,.0f} € de valeur, l'exonération Dutreil (75 %) représente un enjeu fiscal significatif.",
+            "severity": "warning",
+        })
+
+    # ── Patrimoine ────────────────────────────────────────────────────────────
+    if poids >= 80 and "Diversifier le patrimoine" not in objectifs:
+        c.append({
+            "msg": "Entreprise = 80 %+ du patrimoine, mais diversification non citée comme objectif",
+            "detail": "Une concentration aussi forte est un risque patrimonial majeur — vérifier si le client en est conscient.",
+            "severity": "warning",
+        })
+
+    if a.get("actifs_liquides") == "Faible" and a.get("soulte_envisagee") == YES:
+        c.append({
+            "msg": "Soulte envisagée mais actifs liquides faibles",
+            "detail": "Financer une soulte sans liquidités disponibles nécessite un montage spécifique (emprunt, échelonnement).",
+            "severity": "warning",
+        })
+
+    # ── Conjoint ──────────────────────────────────────────────────────────────
+    if a.get("conjoint_present") == YES and a.get("conjoint_dependant") == YES and a.get("protection_conjoint_prevue") == NO:
+        c.append({
+            "msg": "Conjoint dépendant financièrement mais aucune protection prévue",
+            "detail": "En cas de décès ou d'invalidité du dirigeant, le conjoint serait sans ressources protégées.",
+            "severity": "critical",
+        })
+
+    return c
+
+
+
 
 
 # =============================================================================
@@ -2188,6 +2292,17 @@ elif page == "Résultats et solutions":
         with st.expander(f"⚠️ {len(gaps)} information(s) manquante(s) pour affiner le diagnostic"):
             for g in gaps:
                 st.write(f"- {g}")
+
+    contras = detect_contradictions(validated_answers)
+    if contras:
+        critiques = [c for c in contras if c["severity"] == "critical"]
+        warnings  = [c for c in contras if c["severity"] == "warning"]
+        label = f"🔴 {len(critiques)} incohérence(s) critique(s)" if critiques else f"⚠️ {len(contras)} incohérence(s) détectée(s)"
+        with st.expander(label, expanded=bool(critiques)):
+            for ct in critiques:
+                st.error(f"**{ct['msg']}**  \n{ct['detail']}")
+            for ct in warnings:
+                st.warning(f"**{ct['msg']}**  \n{ct['detail']}")
 
     if not detected_df.empty:
         section_card("Visualisation des scores", "📊")
