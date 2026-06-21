@@ -1538,7 +1538,11 @@ def is_subpage_active(sp_id: str, draft: Dict) -> bool:
     # Objectifs : draft ou answers (sauvegardés en continu par render_subpage)
     _obj_raw = draft.get("objectifs") or st.session_state.answers.get("objectifs") or []
     objectifs = set(_obj_raw)
-    nb_enfants = int(draft.get("nb_enfants") or 0)
+    _ans = st.session_state.answers
+    # Fallback vers answers pour les valeurs critiques de navigation
+    nb_enfants = int(draft.get("nb_enfants") or _ans.get("nb_enfants") or 0)
+    _conjoint = draft.get("conjoint_present") or _ans.get("conjoint_present")
+    _fam_rec = draft.get("famille_recomposee") or _ans.get("famille_recomposee")
     poids = int(draft.get("poids_entreprise") or 0)
     valeur = int(draft.get("valeur_entreprise") or 0)
     if sp_id == "poids":
@@ -1548,12 +1552,12 @@ def is_subpage_active(sp_id: str, draft: Dict) -> bool:
     if sp_id == "dialogue":
         return nb_enfants >= 2
     if sp_id == "conjoint":
-        return draft.get("conjoint_present") == YES
+        return _conjoint == YES
     if sp_id == "succession_civ":
-        return nb_enfants >= 2 or draft.get("famille_recomposee") == YES
+        return nb_enfants >= 2 or _fam_rec == YES
     if sp_id == "securite_pat":
         show_div = poids >= 40 or "Diversifier le patrimoine" in objectifs
-        show_prev = (show_div or draft.get("conjoint_present") == YES
+        show_prev = (show_div or _conjoint == YES
                      or "Protéger le conjoint et les proches" in objectifs
                      or draft.get("besoin_revenus_famille") in ["Moyen", "Élevé"]
                      or draft.get("urgence_evenement") == YES)
@@ -1896,6 +1900,12 @@ def render_subpage(sp_id: str) -> None:
                 "Le conjoint adhère-t-il au projet de transmission ?",
                 "accord_conjoint", [UNKNOWN, YES, NO, UNCERTAIN]
             )
+        # Sauvegarde immédiate dans answers pour éviter que is_subpage_active
+        # perde ces valeurs si draft est temporairement incohérent
+        for _k in ("nb_enfants", "conjoint_present", "famille_recomposee"):
+            _v = st.session_state.draft_answers.get(_k)
+            if _v is not None:
+                st.session_state.answers[_k] = _v
         nb = int(get_draft("nb_enfants") or 0)
         obj_d = set(get_draft("objectifs") or [])
         hints = []
@@ -2212,7 +2222,16 @@ if page == "Questionnaire adaptatif":
     current_sp = st.session_state.get("current_subpage", "dossier")
     active_ids = [p["id"] for p in active_pages]
     if current_sp not in active_ids:
-        current_sp = active_ids[0] if active_ids else "dossier"
+        # Fallback vers la page précédente la plus proche au lieu du début
+        _all_ids = [sp["id"] for sp in ALL_SUBPAGES]
+        if current_sp in _all_ids:
+            _pos = _all_ids.index(current_sp)
+            current_sp = next(
+                (pid for pid in reversed(_all_ids[:_pos]) if pid in active_ids),
+                active_ids[0] if active_ids else "dossier"
+            )
+        else:
+            current_sp = active_ids[0] if active_ids else "dossier"
         st.session_state.current_subpage = current_sp
 
     current_idx = get_subpage_idx(current_sp, active_pages)
