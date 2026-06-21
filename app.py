@@ -1815,37 +1815,37 @@ def render_subpage(sp_id: str) -> None:
             )
 
     elif sp_id == "objectifs":
-        # Stockage dans st.session_state["_obj_sel"] — liste Python pure, jamais supprimée
-        # par Streamlit (contrairement aux widget keys qui disparaissent hors-page).
+        # _obj_sel = liste Python dans session_state (pas un widget key).
+        # Survit aux rerenders et aux changements de page, car Streamlit ne
+        # supprime jamais les clés non-widget de session_state.
         if "_obj_sel" not in st.session_state:
             st.session_state["_obj_sel"] = list(
                 st.session_state.draft_answers.get("objectifs") or
                 st.session_state.answers.get("objectifs") or []
             )
+
         st.markdown("**Quels objectifs le dirigeant poursuit-il principalement ?**")
-        st.caption("Clique pour sélectionner / désélectionner.")
-        _toggled = False
+        st.caption("Coche les objectifs poursuivis — ils déterminent les risques analysés.")
+
+        # Checkboxes SANS key= : Streamlit les identifie par position (stable).
+        # La valeur provient de _obj_sel ; pas de double rerun lié aux boutons.
+        _new_sel = []
         for _obj in OBJECTIVE_DISPLAY_ORDER:
-            _is_sel = _obj in st.session_state["_obj_sel"]
-            _label = ("✅ " if _is_sel else "○  ") + _obj
-            if st.button(_label, key=f"_btn_{safe_key(_obj)}",
-                         use_container_width=True,
-                         type="primary" if _is_sel else "secondary"):
-                if _is_sel:
-                    st.session_state["_obj_sel"].remove(_obj)
-                else:
-                    st.session_state["_obj_sel"].append(_obj)
-                _toggled = True
-        selected = list(st.session_state["_obj_sel"])
-        # Sauvegarde immédiate dans draft ET answers à chaque render
-        st.session_state.draft_answers["objectifs"] = selected
-        st.session_state.answers["objectifs"] = selected
-        if not selected:
+            _checked = st.checkbox(_obj, value=_obj in st.session_state["_obj_sel"])
+            if _checked:
+                _new_sel.append(_obj)
+
+        # Mettre à jour _obj_sel depuis les cases cochées
+        st.session_state["_obj_sel"] = _new_sel
+
+        # Sauvegarde immédiate dans draft ET answers
+        st.session_state.draft_answers["objectifs"] = _new_sel
+        st.session_state.answers["objectifs"] = _new_sel
+
+        if not _new_sel:
             st.info("⚠️ Sélectionne au moins un objectif pour activer le scoring des risques.")
         else:
-            st.success(f"✅ {len(selected)} objectif(s) sélectionné(s).")
-        if _toggled:
-            st.rerun()
+            st.success(f"✅ {len(_new_sel)} objectif(s) sélectionné(s).")
 
     elif sp_id == "poids":
         # Objectifs depuis draft ou answers — JAMAIS depuis un widget key
