@@ -1825,7 +1825,15 @@ def render_subpage(sp_id: str) -> None:
             )
 
     elif sp_id == "objectifs":
-        sync_widget_from_draft("objectifs")
+        # Restaure draft depuis cache/answers si nécessaire
+        if not st.session_state.draft_answers.get("objectifs"):
+            _obj = (st.session_state.get("_objectifs_cache") or
+                    st.session_state.answers.get("objectifs") or [])
+            if _obj:
+                st.session_state.draft_answers["objectifs"] = list(_obj)
+        # Force w_objectifs depuis draft (setdefault ne suffit pas si le widget existe déjà à [])
+        _obj_val = st.session_state.draft_answers.get("objectifs") or []
+        st.session_state["w_objectifs"] = _obj_val
 
         def _on_objectifs_change():
             val = st.session_state.get("w_objectifs") or []
