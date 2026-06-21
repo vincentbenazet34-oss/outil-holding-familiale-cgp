@@ -506,11 +506,11 @@ def objective_weight_buttons(objective: str) -> None:
         st.session_state[widget_key] = default
 
     def _on_change():
-        # Préserve les objectifs — w_objectifs n'est pas rendu sur cette page
+        # Restaure les objectifs depuis le cache persistant si draft les a perdus
         if not st.session_state.draft_answers.get("objectifs"):
-            st.session_state.draft_answers["objectifs"] = (
-                st.session_state.answers.get("objectifs") or []
-            )
+            cached = (st.session_state.get("_objectifs_cache") or
+                      st.session_state.answers.get("objectifs") or [])
+            st.session_state.draft_answers["objectifs"] = cached
         val = st.session_state[widget_key]
         st.session_state.draft_answers.setdefault("objective_weights", {})[objective] = val
 
@@ -1788,15 +1788,24 @@ def render_subpage(sp_id: str) -> None:
 
     elif sp_id == "objectifs":
         sync_widget_from_draft("objectifs")
+
+        def _on_objectifs_change():
+            val = st.session_state.get("w_objectifs") or []
+            st.session_state.draft_answers["objectifs"] = val
+            # Stocke dans une clé persistante non-widget (résiste aux reruns)
+            st.session_state["_objectifs_cache"] = val
+
         st.multiselect(
             "Quels objectifs le dirigeant poursuit-il principalement ?",
             OBJECTIVE_DISPLAY_ORDER,
             key="w_objectifs",
             placeholder="Sélectionner un ou plusieurs objectifs",
-            on_change=sync_draft_key,
-            args=("objectifs",),
+            on_change=_on_objectifs_change,
         )
         selected = list(get_draft("objectifs") or [])
+        # Synchronise le cache à chaque render
+        if selected:
+            st.session_state["_objectifs_cache"] = selected
         if not selected:
             st.info("⚠️ Sélectionne au moins un objectif pour activer le scoring des risques.")
         else:
@@ -1806,11 +1815,15 @@ def render_subpage(sp_id: str) -> None:
             )
 
     elif sp_id == "poids":
-        # w_objectifs n'est pas rendu ici → fallback sur draft puis answers
+        # Priorité : cache persistant → draft → answers (w_objectifs non rendu ici)
         selected = list(
+            st.session_state.get("_objectifs_cache") or
             st.session_state.draft_answers.get("objectifs") or
             st.session_state.answers.get("objectifs") or []
         )
+        # Restaure le draft si nécessaire
+        if selected and not st.session_state.draft_answers.get("objectifs"):
+            st.session_state.draft_answers["objectifs"] = selected
         if not selected:
             st.warning("Aucun objectif sélectionné. Reviens à la page précédente.")
         else:
@@ -2391,22 +2404,3 @@ elif page == "Exporter":
 elif page == "Règles de décision":
     st.subheader("Règles de décision du système expert")
     st.write("Chaque réponse validée ajoute des points à certains risques. Aucun signal = niveau Inexistant.")
-    st.code("""
-SI une section n'est pas validée
-ALORS ses réponses ne sont pas utilisées dans le scoring.
-
-SI aucun objectif n'est validé
-ALORS tous les risques restent à 0.
-
-SI un objectif est pondéré « Très important » ou « Prioritaire »
-ALORS les risques associés sont renforcés dans le scoring.
-
-SI le contrôle familial est recherché ET plusieurs héritiers
-ALORS le risque de dilution du capital est activé.
-
-SI conjoint présent ET dépendant financièrement ET aucune protection prévue
-ALORS le risque conjoint est critique.
-
-SI Pacte Dutreil = Oui ET holding animatrice non qualifiée
-ALORS le risque Dutreil est élevé.
-""")
