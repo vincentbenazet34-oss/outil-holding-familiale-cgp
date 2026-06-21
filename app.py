@@ -1812,21 +1812,21 @@ def render_subpage(sp_id: str) -> None:
             )
 
     elif sp_id == "objectifs":
-        # Initialiser w_objectifs depuis draft/answers si absent (jamais depuis flush)
-        _cur_obj = list(
+        # Checkboxes individuels — clé stable par objectif, jamais réinitialisée par flush
+        _saved_obj = list(
             st.session_state.draft_answers.get("objectifs") or
             st.session_state.answers.get("objectifs") or []
         )
-        if "w_objectifs" not in st.session_state:
-            st.session_state["w_objectifs"] = _cur_obj
-        # key= requis pour que Streamlit conserve la sélection malgré les rerenders
-        # "w_objectifs" est dans _skip de _flush_widgets_to_draft et _no_widget de save_step
-        selected = st.multiselect(
-            "Quels objectifs le dirigeant poursuit-il principalement ?",
-            OBJECTIVE_DISPLAY_ORDER,
-            key="w_objectifs",
-            placeholder="Sélectionner un ou plusieurs objectifs",
-        )
+        st.markdown("**Quels objectifs le dirigeant poursuit-il principalement ?**")
+        st.caption("Sélectionne un ou plusieurs objectifs — ils guident l'analyse des risques.")
+        selected = []
+        for _obj in OBJECTIVE_DISPLAY_ORDER:
+            _ck = f"w_obj_{safe_key(_obj)}"
+            # Initialiser seulement si absent (ne jamais écraser la valeur existante)
+            if _ck not in st.session_state:
+                st.session_state[_ck] = _obj in _saved_obj
+            if st.checkbox(_obj, key=_ck):
+                selected.append(_obj)
         # Sauvegarde immédiate dans draft ET answers à chaque render
         st.session_state.draft_answers["objectifs"] = selected
         st.session_state.answers["objectifs"] = selected
