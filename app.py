@@ -424,17 +424,15 @@ def save_step(step: int) -> Tuple[bool, str]:
     """Copie les réponses du brouillon vers answers. Seules answers sont utilisées pour le scoring."""
     keys = STEP_KEYS.get(step, [])
     if step == 1:
-        # Restaure les objectifs depuis cache/answers si draft les a perdus
-        if not st.session_state.draft_answers.get("objectifs"):
-            _obj = (st.session_state.get("_objectifs_cache") or
-                    st.session_state.answers.get("objectifs") or [])
-            if _obj:
-                st.session_state.draft_answers["objectifs"] = list(_obj)
-        if not get_draft("objectifs"):
+        # objectifs sauvegardés en continu dans draft + answers par render_subpage
+        _obj = st.session_state.draft_answers.get("objectifs") or st.session_state.answers.get("objectifs") or []
+        if not _obj:
             return False, "⚠️ Retourne à la page Objectifs et sélectionne au moins un objectif pour continuer."
+        st.session_state.draft_answers["objectifs"] = list(_obj)
 
+    _no_widget = {"objectifs", "objective_weights"}
     for key in keys:
-        if f"w_{key}" in st.session_state:
+        if key not in _no_widget and f"w_{key}" in st.session_state:
             st.session_state.draft_answers[key] = st.session_state[f"w_{key}"]
         st.session_state.answers[key] = st.session_state.draft_answers.get(
             key, st.session_state.answers.get(key, DEFAULT_ANSWERS.get(key))
@@ -1475,14 +1473,7 @@ init_app()
 st.session_state.setdefault("app_page", VIEWS[0])
 st.session_state.setdefault("current_subpage", "dossier")
 st.session_state.setdefault("nav_error", None)
-st.session_state.setdefault("_objectifs_cache", [])
-
-# Restaure le cache objectifs depuis draft/answers à chaque rerun
-if not st.session_state.get("_objectifs_cache"):
-    _obj = (st.session_state.draft_answers.get("objectifs") or
-            st.session_state.answers.get("objectifs") or [])
-    if _obj:
-        st.session_state["_objectifs_cache"] = _obj
+# objectifs/weights sauvegardés directement dans draft_answers + answers (pas de cache intermédiaire)
 
 # ─── Sous-pages du questionnaire ─────────────────────────────────────────────
 
@@ -1544,10 +1535,8 @@ SECTION_NAMES: Dict[Any, str] = {
 
 
 def is_subpage_active(sp_id: str, draft: Dict) -> bool:
-    # Objectifs : toujours chercher dans draft, puis cache, puis answers validées
-    _obj_raw = (draft.get("objectifs") or
-                st.session_state.get("_objectifs_cache") or
-                st.session_state.answers.get("objectifs") or [])
+    # Objectifs : draft ou answers (sauvegardés en continu par render_subpage)
+    _obj_raw = draft.get("objectifs") or st.session_state.answers.get("objectifs") or []
     objectifs = set(_obj_raw)
     nb_enfants = int(draft.get("nb_enfants") or 0)
     poids = int(draft.get("poids_entreprise") or 0)
@@ -1593,14 +1582,7 @@ def get_subpage_idx(sp_id: str, active: List[Dict]) -> int:
 
 
 def _flush_widgets_to_draft() -> None:
-    """Copie TOUS les widgets visibles dans draft_answers avant de changer de page."""
-    # 1. Restaure d'abord les objectifs depuis le cache si draft les a perdus
-    if not st.session_state.draft_answers.get("objectifs"):
-        cached = (st.session_state.get("_objectifs_cache") or
-                  st.session_state.answers.get("objectifs") or [])
-        if cached:
-            st.session_state.draft_answers["objectifs"] = list(cached)
-    # 2. Copie les widgets standards (sauf objectifs/objective_weights gérés séparément)
+    """Copie les widgets w_* dans draft (objectifs/weights gérés directement par render_subpage)."""
     _skip = {"objectifs", "objective_weights"}
     for step_keys in STEP_KEYS.values():
         for key in step_keys:
@@ -1609,29 +1591,16 @@ def _flush_widgets_to_draft() -> None:
             wk = f"w_{key}"
             if wk in st.session_state:
                 st.session_state.draft_answers[key] = st.session_state[wk]
-    # 3. Persiste les objectifs dans answers et cache
-    if st.session_state.draft_answers.get("objectifs"):
-        st.session_state.answers["objectifs"] = st.session_state.draft_answers["objectifs"]
-        st.session_state["_objectifs_cache"] = st.session_state.draft_answers["objectifs"]
-    # 4. Pondérations — lues depuis les radios au moment de naviguer (pas de on_change)
-    for obj in (st.session_state.draft_answers.get("objectifs") or []):
-        wk = f"w_objective_weight_{safe_key(obj)}"
-        if wk in st.session_state:
-            st.session_state.draft_answers.setdefault("objective_weights", {})[obj] = st.session_state[wk]
 
 
 def navigate_next(current_idx: int, active_pages: List[Dict]) -> None:
     _flush_widgets_to_draft()
     current = active_pages[current_idx]
 
-    # Validation inline : impossible de quitter "objectifs" sans avoir sélectionné au moins un objectif
+    # Validation objectifs obligatoires
     if current["id"] == "objectifs":
-        obj_selected = (
-            st.session_state.draft_answers.get("objectifs") or
-            st.session_state.get("_objectifs_cache") or
-            st.session_state.answers.get("objectifs") or []
-        )
-        if not obj_selected:
+        if not (st.session_state.draft_answers.get("objectifs") or
+                st.session_state.answers.get("objectifs")):
             st.session_state.nav_error = "⚠️ Sélectionne au moins un objectif pour continuer."
             st.rerun()
             return
@@ -1825,34 +1794,21 @@ def render_subpage(sp_id: str) -> None:
             )
 
     elif sp_id == "objectifs":
-        # Restaure draft depuis cache/answers si nécessaire
-        if not st.session_state.draft_answers.get("objectifs"):
-            _obj = (st.session_state.get("_objectifs_cache") or
-                    st.session_state.answers.get("objectifs") or [])
-            if _obj:
-                st.session_state.draft_answers["objectifs"] = list(_obj)
-        # Force w_objectifs depuis draft (setdefault ne suffit pas si le widget existe déjà à [])
-        _obj_val = st.session_state.draft_answers.get("objectifs") or []
-        st.session_state["w_objectifs"] = _obj_val
-
-        def _on_objectifs_change():
-            val = st.session_state.get("w_objectifs") or []
-            st.session_state.draft_answers["objectifs"] = val
-            # Stocke dans une clé persistante non-widget (résiste aux reruns)
-            st.session_state["_objectifs_cache"] = val
-
-        st.multiselect(
+        # Valeur courante depuis draft ou answers — JAMAIS depuis un widget key
+        _cur_obj = list(
+            st.session_state.draft_answers.get("objectifs") or
+            st.session_state.answers.get("objectifs") or []
+        )
+        # PAS de key= : la valeur retournée est capturée directement
+        selected = st.multiselect(
             "Quels objectifs le dirigeant poursuit-il principalement ?",
             OBJECTIVE_DISPLAY_ORDER,
-            key="w_objectifs",
+            default=_cur_obj,
             placeholder="Sélectionner un ou plusieurs objectifs",
-            on_change=_on_objectifs_change,
         )
-        selected = list(get_draft("objectifs") or [])
-        # Alimente le cache à chaque render (même sans on_change)
-        if selected:
-            st.session_state["_objectifs_cache"] = selected
-            st.session_state.draft_answers["objectifs"] = selected
+        # Sauvegarde immédiate dans draft ET answers à chaque render
+        st.session_state.draft_answers["objectifs"] = selected
+        st.session_state.answers["objectifs"] = selected
         if not selected:
             st.info("⚠️ Sélectionne au moins un objectif pour activer le scoring des risques.")
         else:
@@ -1862,15 +1818,11 @@ def render_subpage(sp_id: str) -> None:
             )
 
     elif sp_id == "poids":
-        # Priorité : cache persistant → draft → answers (w_objectifs non rendu ici)
+        # Objectifs depuis draft ou answers — JAMAIS depuis un widget key
         selected = list(
-            st.session_state.get("_objectifs_cache") or
             st.session_state.draft_answers.get("objectifs") or
             st.session_state.answers.get("objectifs") or []
         )
-        # Restaure le draft si nécessaire
-        if selected and not st.session_state.draft_answers.get("objectifs"):
-            st.session_state.draft_answers["objectifs"] = selected
         if not selected:
             st.warning("Aucun objectif sélectionné. Reviens à la page précédente.")
         else:
@@ -1882,10 +1834,24 @@ def render_subpage(sp_id: str) -> None:
                 '</div>',
                 unsafe_allow_html=True,
             )
+            _cur_w = (
+                st.session_state.draft_answers.get("objective_weights") or
+                st.session_state.answers.get("objective_weights") or {}
+            )
+            _new_w = {}
             for objective in selected:
-                st.markdown('<div class="importance-card">', unsafe_allow_html=True)
-                objective_weight_buttons(objective)
+                _def = _cur_w.get(objective, "Important")
+                _idx = OBJECTIVE_WEIGHT_OPTIONS.index(_def) if _def in OBJECTIVE_WEIGHT_OPTIONS else 0
+                st.markdown(f'<div class="importance-card"><strong>{objective}</strong>', unsafe_allow_html=True)
+                # PAS de key= : pas de widget state cross-page, valeur retournée directement
+                _new_w[objective] = st.radio(
+                    objective, OBJECTIVE_WEIGHT_OPTIONS,
+                    index=_idx, horizontal=True, label_visibility="collapsed",
+                )
                 st.markdown('</div>', unsafe_allow_html=True)
+            # Sauvegarde immédiate dans draft ET answers à chaque render
+            st.session_state.draft_answers["objective_weights"] = _new_w
+            st.session_state.answers["objective_weights"] = _new_w
 
     elif sp_id == "rapport":
         c1, c2 = st.columns(2)
