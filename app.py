@@ -2095,6 +2095,17 @@ def render_subpage(sp_id: str) -> None:
                 ):
                     for g in gaps:
                         st.write(f"- {g}")
+            contras = detect_contradictions(validated_answers)
+            if contras:
+                _crit = [c for c in contras if c["severity"] == "critical"]
+                _warn = [c for c in contras if c["severity"] == "warning"]
+                _lbl = (f"🔴 {len(_crit)} incohérence(s) critique(s) — à traiter avant de conclure"
+                        if _crit else f"⚠️ {len(contras)} point(s) à clarifier avec le client")
+                with st.expander(_lbl, expanded=True):
+                    for ct in _crit:
+                        st.error(f"**{ct['msg']}**  \n{ct['detail']}")
+                    for ct in _warn:
+                        st.warning(f"**{ct['msg']}**  \n{ct['detail']}")
             if detected_df.empty:
                 st.success("✅ Aucun risque détecté sur la base des réponses validées.")
             else:
