@@ -1500,8 +1500,7 @@ def is_subpage_active(sp_id: str, draft: Dict) -> bool:
     valeur = int(draft.get("valeur_entreprise") or 0)
     if sp_id == "poids":
         return bool(objectifs)
-    if sp_id == "repreneur":
-        return "Transmettre l'entreprise" in objectifs
+    # repreneur : toujours posé (question universelle)
     if sp_id == "dialogue":
         return nb_enfants >= 2
     if sp_id == "conjoint":
