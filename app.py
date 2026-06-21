@@ -497,22 +497,15 @@ def slider(label: str, key: str, min_value: int, max_value: int) -> Any:
 
 
 def objective_weight_buttons(objective: str) -> None:
-    """Affiche la pondération de l'objectif via un radio horizontal (sans conflit nav)."""
+    """Affiche la pondération via radio — PAS de on_change pour éviter tout conflit nav."""
     widget_key = f"w_objective_weight_{safe_key(objective)}"
-    weights = st.session_state.draft_answers.setdefault("objective_weights", {})
-    saved = (st.session_state.answers.get("objective_weights") or {}).get(objective, "Important")
-    default = weights.get(objective, saved)
+    saved = (
+        (st.session_state.draft_answers.get("objective_weights") or {}).get(objective)
+        or (st.session_state.answers.get("objective_weights") or {}).get(objective)
+        or "Important"
+    )
     if widget_key not in st.session_state:
-        st.session_state[widget_key] = default
-
-    def _on_change():
-        # Restaure les objectifs depuis le cache persistant si draft les a perdus
-        if not st.session_state.draft_answers.get("objectifs"):
-            cached = (st.session_state.get("_objectifs_cache") or
-                      st.session_state.answers.get("objectifs") or [])
-            st.session_state.draft_answers["objectifs"] = cached
-        val = st.session_state[widget_key]
-        st.session_state.draft_answers.setdefault("objective_weights", {})[objective] = val
+        st.session_state[widget_key] = saved
 
     st.markdown(f"**{objective}**")
     idx = OBJECTIVE_WEIGHT_OPTIONS.index(st.session_state[widget_key]) \
@@ -524,7 +517,7 @@ def objective_weight_buttons(objective: str) -> None:
         key=widget_key,
         horizontal=True,
         label_visibility="collapsed",
-        on_change=_on_change,
+        # Pas de on_change : valeur lue par _flush_widgets_to_draft au moment de naviguer
     )
 
 
@@ -1544,7 +1537,11 @@ SECTION_NAMES: Dict[Any, str] = {
 
 
 def is_subpage_active(sp_id: str, draft: Dict) -> bool:
-    objectifs = set(draft.get("objectifs") or [])
+    # Objectifs : toujours chercher dans draft, puis cache, puis answers validées
+    _obj_raw = (draft.get("objectifs") or
+                st.session_state.get("_objectifs_cache") or
+                st.session_state.answers.get("objectifs") or [])
+    objectifs = set(_obj_raw)
     nb_enfants = int(draft.get("nb_enfants") or 0)
     poids = int(draft.get("poids_entreprise") or 0)
     valeur = int(draft.get("valeur_entreprise") or 0)
@@ -1590,15 +1587,23 @@ def get_subpage_idx(sp_id: str, active: List[Dict]) -> int:
 
 def _flush_widgets_to_draft() -> None:
     """Copie TOUS les widgets visibles dans draft_answers avant de changer de page."""
+    # 1. Restaure d'abord les objectifs depuis le cache si draft les a perdus
+    if not st.session_state.draft_answers.get("objectifs"):
+        cached = (st.session_state.get("_objectifs_cache") or
+                  st.session_state.answers.get("objectifs") or [])
+        if cached:
+            st.session_state.draft_answers["objectifs"] = list(cached)
+    # 2. Copie les widgets standards
     for step_keys in STEP_KEYS.values():
         for key in step_keys:
             wk = f"w_{key}"
             if wk in st.session_state:
                 st.session_state.draft_answers[key] = st.session_state[wk]
-    # Persiste immédiatement les objectifs dans answers (résiste aux reruns sans widget)
+    # 3. Persiste les objectifs dans answers et cache
     if st.session_state.draft_answers.get("objectifs"):
         st.session_state.answers["objectifs"] = st.session_state.draft_answers["objectifs"]
-    # Pondérations objectifs
+        st.session_state["_objectifs_cache"] = st.session_state.draft_answers["objectifs"]
+    # 4. Pondérations — lues depuis les radios au moment de naviguer (pas de on_change)
     for obj in (st.session_state.draft_answers.get("objectifs") or []):
         wk = f"w_objective_weight_{safe_key(obj)}"
         if wk in st.session_state:
