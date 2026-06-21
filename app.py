@@ -424,7 +424,7 @@ def save_step(step: int) -> Tuple[bool, str]:
     """Copie les réponses du brouillon vers answers. Seules answers sont utilisées pour le scoring."""
     keys = STEP_KEYS.get(step, [])
     if step == 1 and not get_draft("objectifs"):
-        return False, "Sélectionne au moins un objectif avant de valider l'étape 1."
+        return False, "⚠️ Retourne à la page Objectifs et sélectionne au moins un objectif pour continuer."
 
     for key in keys:
         if f"w_{key}" in st.session_state:
@@ -1475,6 +1475,14 @@ init_app()
 st.session_state.setdefault("app_page", VIEWS[0])
 st.session_state.setdefault("current_subpage", "dossier")
 st.session_state.setdefault("nav_error", None)
+st.session_state.setdefault("_objectifs_cache", [])
+
+# Restaure le cache objectifs depuis draft/answers à chaque rerun
+if not st.session_state.get("_objectifs_cache"):
+    _obj = (st.session_state.draft_answers.get("objectifs") or
+            st.session_state.answers.get("objectifs") or [])
+    if _obj:
+        st.session_state["_objectifs_cache"] = _obj
 
 # ─── Sous-pages du questionnaire ─────────────────────────────────────────────
 
@@ -1803,9 +1811,10 @@ def render_subpage(sp_id: str) -> None:
             on_change=_on_objectifs_change,
         )
         selected = list(get_draft("objectifs") or [])
-        # Synchronise le cache à chaque render
+        # Alimente le cache à chaque render (même sans on_change)
         if selected:
             st.session_state["_objectifs_cache"] = selected
+            st.session_state.draft_answers["objectifs"] = selected
         if not selected:
             st.info("⚠️ Sélectionne au moins un objectif pour activer le scoring des risques.")
         else:
