@@ -1731,6 +1731,9 @@ for _step_keys in STEP_KEYS.values():
         _wk = f"w_{_wkey}"
         if _wk in st.session_state and st.session_state[_wk] is not None:
             validated_answers[_wkey] = st.session_state[_wk]
+# Source la plus fiable pour objectifs : _obj_sel stocké hors widgets
+if st.session_state.get("_obj_sel") is not None:
+    validated_answers["objectifs"] = list(st.session_state["_obj_sel"])
 df, evidence = calculate_risks(validated_answers)
 detected_df = df[df["Score"] > 0].copy()
 zero_df = df[df["Score"] == 0].copy()
@@ -1812,31 +1815,37 @@ def render_subpage(sp_id: str) -> None:
             )
 
     elif sp_id == "objectifs":
-        # Checkboxes individuels — clé stable par objectif, jamais réinitialisée par flush
-        _saved_obj = list(
-            st.session_state.draft_answers.get("objectifs") or
-            st.session_state.answers.get("objectifs") or []
-        )
+        # Stockage dans st.session_state["_obj_sel"] — liste Python pure, jamais supprimée
+        # par Streamlit (contrairement aux widget keys qui disparaissent hors-page).
+        if "_obj_sel" not in st.session_state:
+            st.session_state["_obj_sel"] = list(
+                st.session_state.draft_answers.get("objectifs") or
+                st.session_state.answers.get("objectifs") or []
+            )
         st.markdown("**Quels objectifs le dirigeant poursuit-il principalement ?**")
-        st.caption("Sélectionne un ou plusieurs objectifs — ils guident l'analyse des risques.")
-        selected = []
+        st.caption("Clique pour sélectionner / désélectionner.")
+        _toggled = False
         for _obj in OBJECTIVE_DISPLAY_ORDER:
-            _ck = f"w_obj_{safe_key(_obj)}"
-            # Initialiser seulement si absent (ne jamais écraser la valeur existante)
-            if _ck not in st.session_state:
-                st.session_state[_ck] = _obj in _saved_obj
-            if st.checkbox(_obj, key=_ck):
-                selected.append(_obj)
+            _is_sel = _obj in st.session_state["_obj_sel"]
+            _label = ("✅ " if _is_sel else "○  ") + _obj
+            if st.button(_label, key=f"_btn_{safe_key(_obj)}",
+                         use_container_width=True,
+                         type="primary" if _is_sel else "secondary"):
+                if _is_sel:
+                    st.session_state["_obj_sel"].remove(_obj)
+                else:
+                    st.session_state["_obj_sel"].append(_obj)
+                _toggled = True
+        selected = list(st.session_state["_obj_sel"])
         # Sauvegarde immédiate dans draft ET answers à chaque render
         st.session_state.draft_answers["objectifs"] = selected
         st.session_state.answers["objectifs"] = selected
         if not selected:
             st.info("⚠️ Sélectionne au moins un objectif pour activer le scoring des risques.")
         else:
-            st.success(
-                f"✅ {len(selected)} objectif(s) sélectionné(s). "
-                "Une page de pondération s'affichera à l'étape suivante."
-            )
+            st.success(f"✅ {len(selected)} objectif(s) sélectionné(s).")
+        if _toggled:
+            st.rerun()
 
     elif sp_id == "poids":
         # Objectifs depuis draft ou answers — JAMAIS depuis un widget key
