@@ -357,20 +357,13 @@ def weight_for_risk(code: str, answers: Dict[str, Any] | None) -> Tuple[str, flo
     return label, factor
 
 def init_app() -> None:
-    if "answers" not in st.session_state:
-        st.session_state.answers = dict(DEFAULT_ANSWERS)
-    if "draft_answers" not in st.session_state:
-        # Les réponses en cours de saisie sont conservées séparément des réponses validées.
-        # Cela permet de revenir en arrière dans le questionnaire sans perdre les champs déjà remplis.
-        st.session_state.draft_answers = dict(st.session_state.answers)
-    if "validated_steps" not in st.session_state:
-        st.session_state.validated_steps = set()
-    if "last_validation" not in st.session_state:
-        st.session_state.last_validation = {}
-    st.session_state.setdefault("current_step", 1)
+    if "data" not in st.session_state:
+        st.session_state.data = dict(DEFAULT_ANSWERS)
+    st.session_state.answers = st.session_state.data
+    st.session_state.draft_answers = st.session_state.data
     st.session_state.setdefault("app_page", "Questionnaire adaptatif")
-    for key, value in DEFAULT_ANSWERS.items():
-        st.session_state.setdefault(f"w_{key}", st.session_state.draft_answers.get(key, st.session_state.answers.get(key, value)))
+    st.session_state.setdefault("nav_error", None)
+    st.session_state.setdefault("validated_steps", set())
 
 
 def reset_app() -> None:
@@ -385,168 +378,116 @@ def reset_app() -> None:
 # 2. (suite) Sync, validation, widgets
 # =============================================================================
 
-def sync_draft_key(key: str) -> None:
-    """Copie immédiatement la valeur d'un widget dans le brouillon."""
-    widget_key = f"w_{key}"
-    if widget_key in st.session_state:
-        st.session_state.draft_answers[key] = st.session_state[widget_key]
-
-
-def sync_widget_from_draft(key: str) -> None:
-    """Initialise le widget avec la dernière valeur saisie."""
-    value = st.session_state.draft_answers.get(
-        key, st.session_state.answers.get(key, DEFAULT_ANSWERS.get(key))
-    )
-    st.session_state.setdefault(f"w_{key}", value)
-
-
 def set_answer_and_draft(key: str, value: Any) -> None:
-    st.session_state.answers[key] = value
-    st.session_state.draft_answers[key] = value
-    widget_key = f"w_{key}"
-    if widget_key in st.session_state:
-        st.session_state[widget_key] = value
+    st.session_state.data[key] = value
 
 
 def get_draft(key: str) -> Any:
-    if f"w_{key}" in st.session_state:
-        st.session_state.draft_answers[key] = st.session_state[f"w_{key}"]
-    return st.session_state.draft_answers.get(
-        key, st.session_state.answers.get(key, DEFAULT_ANSWERS.get(key))
-    )
+    return st.session_state.data.get(key, DEFAULT_ANSWERS.get(key))
 
 
 def selected_objectives_from_draft() -> set:
-    return set(get_draft("objectifs") or [])
+    return set(st.session_state.data.get("objectifs") or [])
 
 
 def save_step(step: int) -> Tuple[bool, str]:
-    """Copie les réponses du brouillon vers answers. Seules answers sont utilisées pour le scoring."""
-    keys = STEP_KEYS.get(step, [])
-    if step == 1:
-        # objectifs sauvegardés en continu dans draft + answers par render_subpage
-        _obj = st.session_state.draft_answers.get("objectifs") or st.session_state.answers.get("objectifs") or []
-        if not _obj:
-            return False, "⚠️ Retourne à la page Objectifs et sélectionne au moins un objectif pour continuer."
-        st.session_state.draft_answers["objectifs"] = list(_obj)
+    """Marque une étape comme complète. Plus de copie draft→answers (même dict)."""
+    data = st.session_state.data
+    objectifs = set(data.get("objectifs") or [])
 
-    _no_widget = {"objectifs", "objective_weights"}
-    for key in keys:
-        if key not in _no_widget and f"w_{key}" in st.session_state:
-            st.session_state.draft_answers[key] = st.session_state[f"w_{key}"]
-        st.session_state.answers[key] = st.session_state.draft_answers.get(
-            key, st.session_state.answers.get(key, DEFAULT_ANSWERS.get(key))
-        )
+    if step == 1 and not objectifs:
+        return False, "⚠️ Retourne à la page Objectifs et sélectionne au moins un objectif."
 
-    if step == 1:
-        selected = list(st.session_state.answers.get("objectifs") or [])
-        weights = {}
-        draft_weights = st.session_state.draft_answers.get("objective_weights", {}) or {}
-        for objective in selected:
-            widget_key = f"w_objective_weight_{safe_key(objective)}"
-            weights[objective] = st.session_state.get(
-                widget_key, draft_weights.get(objective, "Important")
-            )
-        st.session_state.answers["objective_weights"] = weights
-        st.session_state.draft_answers["objective_weights"] = weights
-        st.session_state["w_objective_weights"] = weights
+    # Réinitialiser les champs conditionnels devenus hors-scope
+    if "Transmettre l'entreprise" not in objectifs or int(data.get("nb_enfants") or 0) == 0:
+        for k in ["heritier_repreneur", "autres_heritiers_actifs", "soulte_envisagee",
+                  "capacite_financement_soulte", "successeur_prepare", "calendrier_transmission"]:
+            data[k] = UNKNOWN
 
-    a = st.session_state.answers
-    objectifs = set(a.get("objectifs") or [])
+    if data.get("heritier_repreneur") != YES:
+        for k in ["autres_heritiers_actifs", "volonte_non_repreneurs",
+                  "soulte_envisagee", "capacite_financement_soulte"]:
+            data[k] = UNKNOWN
 
-    if "Transmettre l'entreprise" not in objectifs or int(a.get("nb_enfants") or 0) == 0:
-        for key in ["heritier_repreneur", "autres_heritiers_actifs", "soulte_envisagee",
-                    "capacite_financement_soulte", "successeur_prepare", "calendrier_transmission"]:
-            set_answer_and_draft(key, UNKNOWN)
+    if data.get("conjoint_present") != YES:
+        data["accord_conjoint"] = UNKNOWN
 
-    if a.get("heritier_repreneur") != YES:
-        for key in ["autres_heritiers_actifs", "volonte_non_repreneurs",
-                    "soulte_envisagee", "capacite_financement_soulte"]:
-            set_answer_and_draft(key, UNKNOWN)
+    if data.get("soulte_envisagee") != YES:
+        data["capacite_financement_soulte"] = UNKNOWN
 
-    if a.get("conjoint_present") != YES:
-        set_answer_and_draft("accord_conjoint", UNKNOWN)
+    if "Protéger le conjoint et les proches" not in objectifs or data.get("conjoint_present") != YES:
+        for k in ["conjoint_dependant", "protection_conjoint_prevue", "regime_matrimonial_adapte"]:
+            data[k] = UNKNOWN
 
-    if a.get("soulte_envisagee") != YES:
-        set_answer_and_draft("capacite_financement_soulte", UNKNOWN)
-
-    if "Protéger le conjoint et les proches" not in objectifs or a.get("conjoint_present") != YES:
-        for key in ["conjoint_dependant", "protection_conjoint_prevue", "regime_matrimonial_adapte"]:
-            set_answer_and_draft(key, UNKNOWN)
-
-    if a.get("pacte_dutreil") != YES:
-        for key in ["holding_animatrice", "audit_dutreil", "suivi_engagements"]:
-            set_answer_and_draft(key, UNKNOWN)
+    if data.get("pacte_dutreil") != YES:
+        for k in ["holding_animatrice", "audit_dutreil", "suivi_engagements"]:
+            data[k] = UNKNOWN
 
     st.session_state.validated_steps.add(step)
-    st.session_state.last_validation[step] = datetime.now().strftime("%H:%M:%S")
-    return True, f"Étape {step} validée. Les réponses sont enregistrées dans le diagnostic."
+    return True, f"Étape {step} validée."
 
-
-def yes_no_unknown(label: str, key: str, options: List[str] | None = None, horizontal: bool = True) -> Any:
-    sync_widget_from_draft(key)
+def yes_no_unknown(label: str, key: str, options: List[str] | None = None,
+                   horizontal: bool = True) -> Any:
     opts = options or [UNKNOWN, YES, NO]
-    return st.radio(label, opts, key=f"w_{key}", horizontal=horizontal,
-                    on_change=sync_draft_key, args=(key,))
+    cur = st.session_state.data.get(key, opts[0])
+    idx = opts.index(cur) if cur in opts else 0
+    val = st.radio(label, opts, index=idx, horizontal=horizontal)
+    st.session_state.data[key] = val
+    return val
 
 
 def number_input(label: str, key: str, **kwargs: Any) -> Any:
-    sync_widget_from_draft(key)
-    return st.number_input(label, key=f"w_{key}", on_change=sync_draft_key, args=(key,), **kwargs)
+    default = kwargs.pop("value", 0)
+    cur = st.session_state.data.get(key, default)
+    try:
+        cur = type(default)(cur)
+    except Exception:
+        cur = default
+    val = st.number_input(label, value=cur, **kwargs)
+    st.session_state.data[key] = val
+    return val
 
 
 def slider(label: str, key: str, min_value: int, max_value: int) -> Any:
-    sync_widget_from_draft(key)
-    return st.slider(label, min_value, max_value, key=f"w_{key}",
-                     on_change=sync_draft_key, args=(key,))
+    cur = int(st.session_state.data.get(key, min_value) or min_value)
+    cur = max(min_value, min(max_value, cur))
+    val = st.slider(label, min_value, max_value, value=cur)
+    st.session_state.data[key] = val
+    return val
 
 
 def objective_weight_buttons(objective: str) -> None:
-    """Affiche la pondération via radio — PAS de on_change pour éviter tout conflit nav."""
-    widget_key = f"w_objective_weight_{safe_key(objective)}"
-    saved = (
-        (st.session_state.draft_answers.get("objective_weights") or {}).get(objective)
-        or (st.session_state.answers.get("objective_weights") or {}).get(objective)
-        or "Important"
-    )
-    if widget_key not in st.session_state:
-        st.session_state[widget_key] = saved
-
+    saved = (st.session_state.data.get("objective_weights") or {}).get(objective, "Important")
+    idx = OBJECTIVE_WEIGHT_OPTIONS.index(saved) if saved in OBJECTIVE_WEIGHT_OPTIONS else 0
     st.markdown(f"**{objective}**")
-    idx = OBJECTIVE_WEIGHT_OPTIONS.index(st.session_state[widget_key]) \
-        if st.session_state[widget_key] in OBJECTIVE_WEIGHT_OPTIONS else 0
-    st.radio(
-        "Importance",
-        OBJECTIVE_WEIGHT_OPTIONS,
-        index=idx,
-        key=widget_key,
-        horizontal=True,
-        label_visibility="collapsed",
-        # Pas de on_change : valeur lue par _flush_widgets_to_draft au moment de naviguer
-    )
+    val = st.radio("Importance", OBJECTIVE_WEIGHT_OPTIONS, index=idx,
+                   horizontal=True, label_visibility="collapsed")
+    weights = dict(st.session_state.data.get("objective_weights") or {})
+    weights[objective] = val
+    st.session_state.data["objective_weights"] = weights
 
 
 def selectbox(label: str, key: str, options: List[str]) -> Any:
-    sync_widget_from_draft(key)
-    current = st.session_state.get(
-        f"w_{key}", st.session_state.draft_answers.get(key, DEFAULT_ANSWERS.get(key))
-    )
-    if current not in options:
-        st.session_state[f"w_{key}"] = options[0] if options else None
-        st.session_state.draft_answers[key] = st.session_state[f"w_{key}"]
-    return st.selectbox(label, options, key=f"w_{key}", on_change=sync_draft_key, args=(key,))
+    cur = st.session_state.data.get(key, options[0] if options else None)
+    if cur not in options:
+        cur = options[0] if options else None
+    val = st.selectbox(label, options, index=options.index(cur) if cur in options else 0)
+    st.session_state.data[key] = val
+    return val
 
 
 def text_input_field(label: str, key: str, placeholder: str = "") -> Any:
-    sync_widget_from_draft(key)
-    return st.text_input(label, key=f"w_{key}", placeholder=placeholder,
-                         on_change=sync_draft_key, args=(key,))
+    cur = st.session_state.data.get(key) or ""
+    val = st.text_input(label, value=cur, placeholder=placeholder)
+    st.session_state.data[key] = val
+    return val
 
 
 def text_area_field(label: str, key: str, placeholder: str = "", height: int = 90) -> Any:
-    sync_widget_from_draft(key)
-    return st.text_area(label, key=f"w_{key}", placeholder=placeholder, height=height,
-                        on_change=sync_draft_key, args=(key,))
+    cur = st.session_state.data.get(key) or ""
+    val = st.text_area(label, value=cur, placeholder=placeholder, height=height)
+    st.session_state.data[key] = val
+    return val
 
 
 # =============================================================================
@@ -1538,11 +1479,9 @@ def is_subpage_active(sp_id: str, draft: Dict) -> bool:
     # Objectifs : draft ou answers (sauvegardés en continu par render_subpage)
     _obj_raw = draft.get("objectifs") or st.session_state.answers.get("objectifs") or []
     objectifs = set(_obj_raw)
-    _ans = st.session_state.answers
-    # Fallback vers answers pour les valeurs critiques de navigation
-    nb_enfants = int(draft.get("nb_enfants") or _ans.get("nb_enfants") or 0)
-    _conjoint = draft.get("conjoint_present") or _ans.get("conjoint_present")
-    _fam_rec = draft.get("famille_recomposee") or _ans.get("famille_recomposee")
+    nb_enfants = int(draft.get("nb_enfants") or 0)
+    _conjoint = draft.get("conjoint_present")
+    _fam_rec = draft.get("famille_recomposee")
     poids = int(draft.get("poids_entreprise") or 0)
     valeur = int(draft.get("valeur_entreprise") or 0)
     if sp_id == "poids":
@@ -1585,51 +1524,28 @@ def get_subpage_idx(sp_id: str, active: List[Dict]) -> int:
     return ids.index(sp_id) if sp_id in ids else 0
 
 
-def _flush_widgets_to_draft() -> None:
-    """Copie les widgets w_* dans draft (objectifs/weights gérés directement par render_subpage)."""
-    _skip = {"objectifs", "objective_weights"}
-    for step_keys in STEP_KEYS.values():
-        for key in step_keys:
-            if key in _skip:
-                continue
-            wk = f"w_{key}"
-            if wk in st.session_state:
-                st.session_state.draft_answers[key] = st.session_state[wk]
+# _flush_widgets_to_draft supprimé — plus de widgets keys w_*
 
 
 def navigate_next(current_idx: int, active_pages: List[Dict]) -> None:
-    _flush_widgets_to_draft()
     current = active_pages[current_idx]
-
-    # Validation objectifs obligatoires
-    if current["id"] == "objectifs":
-        if not (st.session_state.draft_answers.get("objectifs") or
-                st.session_state.answers.get("objectifs")):
-            st.session_state.nav_error = "⚠️ Sélectionne au moins un objectif pour continuer."
-            st.rerun()
-            return
-
+    if current["id"] == "objectifs" and not st.session_state.data.get("objectifs"):
+        st.session_state.nav_error = "⚠️ Sélectionne au moins un objectif pour continuer."
+        st.rerun()
+        return
+    # Marquer l'étape comme complète quand on franchit la frontière
     is_last = current_idx + 1 >= len(active_pages)
-    if not is_last:
-        next_pg = active_pages[current_idx + 1]
-        crosses = current["step"] is not None and next_pg["step"] != current["step"]
-    else:
-        crosses = current["step"] is not None
-    if crosses:
-        ok, msg = save_step(current["step"])
-        if not ok:
-            st.session_state.nav_error = msg
-            if "objectif" in msg.lower():
-                st.session_state.current_subpage = "objectifs"
-            st.rerun()
-            return
+    next_step = active_pages[current_idx + 1]["step"] if not is_last else None
+    if current["step"] is not None and next_step != current["step"]:
+        st.session_state.validated_steps.add(current["step"])
+    elif is_last and current["step"] is not None:
+        st.session_state.validated_steps.add(current["step"])
     st.session_state.nav_error = None
     st.session_state.current_subpage = "synthese" if is_last else active_pages[current_idx + 1]["id"]
     st.rerun()
 
 
 def navigate_prev(current_idx: int, active_pages: List[Dict]) -> None:
-    _flush_widgets_to_draft()
     if current_idx > 0:
         st.session_state.nav_error = None
         st.session_state.current_subpage = active_pages[current_idx - 1]["id"]
@@ -1716,24 +1632,7 @@ st.markdown("""
 
 # ─── Calcul des risques (réponses validées uniquement) ───────────────────────
 
-# Merge : draft (plus récent) surcharge answers (validé par save_step)
-# Garantit que toutes les réponses saisies sont prises en compte même sans
-# avoir traversé chaque frontière d'étape.
-validated_answers = dict(st.session_state.answers)
-for _k, _v in st.session_state.draft_answers.items():
-    if _v is not None:
-        validated_answers[_k] = _v
-# Inclure aussi les widgets actifs du questionnaire (page courante)
-for _step_keys in STEP_KEYS.values():
-    for _wkey in _step_keys:
-        if _wkey in {"objectifs", "objective_weights"}:
-            continue
-        _wk = f"w_{_wkey}"
-        if _wk in st.session_state and st.session_state[_wk] is not None:
-            validated_answers[_wkey] = st.session_state[_wk]
-# Source la plus fiable pour objectifs : _obj_sel stocké hors widgets
-if st.session_state.get("_obj_sel") is not None:
-    validated_answers["objectifs"] = list(st.session_state["_obj_sel"])
+validated_answers = st.session_state.data
 df, evidence = calculate_risks(validated_answers)
 detected_df = df[df["Score"] > 0].copy()
 zero_df = df[df["Score"] == 0].copy()
@@ -1815,44 +1714,22 @@ def render_subpage(sp_id: str) -> None:
             )
 
     elif sp_id == "objectifs":
-        # _obj_sel = liste Python dans session_state (pas un widget key).
-        # Survit aux rerenders et aux changements de page, car Streamlit ne
-        # supprime jamais les clés non-widget de session_state.
-        if "_obj_sel" not in st.session_state:
-            st.session_state["_obj_sel"] = list(
-                st.session_state.draft_answers.get("objectifs") or
-                st.session_state.answers.get("objectifs") or []
-            )
-
+        # Checkboxes SANS key= — valeur toujours depuis data (dict unique).
         st.markdown("**Quels objectifs le dirigeant poursuit-il principalement ?**")
-        st.caption("Coche les objectifs poursuivis — ils déterminent les risques analysés.")
-
-        # Checkboxes SANS key= : Streamlit les identifie par position (stable).
-        # La valeur provient de _obj_sel ; pas de double rerun lié aux boutons.
-        _new_sel = []
+        st.caption("Coche les objectifs — ils déterminent les risques analysés.")
+        _cur = list(st.session_state.data.get("objectifs") or [])
+        _sel = []
         for _obj in OBJECTIVE_DISPLAY_ORDER:
-            _checked = st.checkbox(_obj, value=_obj in st.session_state["_obj_sel"])
-            if _checked:
-                _new_sel.append(_obj)
-
-        # Mettre à jour _obj_sel depuis les cases cochées
-        st.session_state["_obj_sel"] = _new_sel
-
-        # Sauvegarde immédiate dans draft ET answers
-        st.session_state.draft_answers["objectifs"] = _new_sel
-        st.session_state.answers["objectifs"] = _new_sel
-
-        if not _new_sel:
-            st.info("⚠️ Sélectionne au moins un objectif pour activer le scoring des risques.")
+            if st.checkbox(_obj, value=_obj in _cur):
+                _sel.append(_obj)
+        st.session_state.data["objectifs"] = _sel
+        if not _sel:
+            st.info("⚠️ Sélectionne au moins un objectif pour activer le scoring.")
         else:
-            st.success(f"✅ {len(_new_sel)} objectif(s) sélectionné(s).")
+            st.success(f"✅ {len(_sel)} objectif(s) sélectionné(s).")
 
     elif sp_id == "poids":
-        # Objectifs depuis draft ou answers — JAMAIS depuis un widget key
-        selected = list(
-            st.session_state.draft_answers.get("objectifs") or
-            st.session_state.answers.get("objectifs") or []
-        )
+        selected = list(st.session_state.data.get("objectifs") or [])
         if not selected:
             st.warning("Aucun objectif sélectionné. Reviens à la page précédente.")
         else:
@@ -1864,10 +1741,7 @@ def render_subpage(sp_id: str) -> None:
                 '</div>',
                 unsafe_allow_html=True,
             )
-            _cur_w = (
-                st.session_state.draft_answers.get("objective_weights") or
-                st.session_state.answers.get("objective_weights") or {}
-            )
+            _cur_w = st.session_state.data.get("objective_weights") or {}
             _new_w = {}
             for objective in selected:
                 _def = _cur_w.get(objective, "Important")
@@ -1880,8 +1754,7 @@ def render_subpage(sp_id: str) -> None:
                 )
                 st.markdown('</div>', unsafe_allow_html=True)
             # Sauvegarde immédiate dans draft ET answers à chaque render
-            st.session_state.draft_answers["objective_weights"] = _new_w
-            st.session_state.answers["objective_weights"] = _new_w
+            st.session_state.data["objective_weights"] = _new_w
 
     elif sp_id == "rapport":
         c1, c2 = st.columns(2)
@@ -1926,13 +1799,7 @@ def render_subpage(sp_id: str) -> None:
                 "Le conjoint adhère-t-il au projet de transmission ?",
                 "accord_conjoint", [UNKNOWN, YES, NO, UNCERTAIN]
             )
-        # Sauvegarde immédiate dans answers pour éviter que is_subpage_active
-        # perde ces valeurs si draft est temporairement incohérent
-        for _k in ("nb_enfants", "conjoint_present", "famille_recomposee"):
-            _v = st.session_state.draft_answers.get(_k)
-            if _v is not None:
-                st.session_state.answers[_k] = _v
-        nb = int(get_draft("nb_enfants") or 0)
+        nb = int(st.session_state.data.get("nb_enfants") or 0)
         obj_d = set(get_draft("objectifs") or [])
         hints = []
         if nb > 0 and "Transmettre l'entreprise" in obj_d:
@@ -2172,7 +2039,7 @@ with st.sidebar:
 
     st.divider()
 
-    _draft = st.session_state.draft_answers
+    _draft = st.session_state.data
     _active_pages = get_active_subpages(_draft)
     _current_sp = st.session_state.get("current_subpage", "dossier")
     if _current_sp not in [p["id"] for p in _active_pages]:
@@ -2242,13 +2109,12 @@ with st.sidebar:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 if page == "Questionnaire adaptatif":
-    draft = st.session_state.draft_answers
+    draft = st.session_state.data
     active_pages = get_active_subpages(draft)
 
     current_sp = st.session_state.get("current_subpage", "dossier")
     active_ids = [p["id"] for p in active_pages]
     if current_sp not in active_ids:
-        # Fallback vers la page précédente la plus proche au lieu du début
         _all_ids = [sp["id"] for sp in ALL_SUBPAGES]
         if current_sp in _all_ids:
             _pos = _all_ids.index(current_sp)
