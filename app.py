@@ -1812,16 +1812,19 @@ def render_subpage(sp_id: str) -> None:
             )
 
     elif sp_id == "objectifs":
-        # Valeur courante depuis draft ou answers — JAMAIS depuis un widget key
+        # Initialiser w_objectifs depuis draft/answers si absent (jamais depuis flush)
         _cur_obj = list(
             st.session_state.draft_answers.get("objectifs") or
             st.session_state.answers.get("objectifs") or []
         )
-        # PAS de key= : la valeur retournée est capturée directement
+        if "w_objectifs" not in st.session_state:
+            st.session_state["w_objectifs"] = _cur_obj
+        # key= requis pour que Streamlit conserve la sélection malgré les rerenders
+        # "w_objectifs" est dans _skip de _flush_widgets_to_draft et _no_widget de save_step
         selected = st.multiselect(
             "Quels objectifs le dirigeant poursuit-il principalement ?",
             OBJECTIVE_DISPLAY_ORDER,
-            default=_cur_obj,
+            key="w_objectifs",
             placeholder="Sélectionner un ou plusieurs objectifs",
         )
         # Sauvegarde immédiate dans draft ET answers à chaque render
