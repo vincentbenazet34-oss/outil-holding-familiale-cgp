@@ -1466,6 +1466,9 @@ def create_xlsx_matrix(df: pd.DataFrame) -> bytes:
 
 VIEWS = ["Questionnaire adaptatif", "Résultats et solutions", "Exporter", "Règles de décision", "Debug validation"]
 
+# ─── Initialisation de la session (DOIT être avant tout accès à session_state) ──
+init_app()
+
 # ─── Initialisation état UI ──────────────────────────────────────────────────
 
 st.session_state.setdefault("app_page", VIEWS[0])
