@@ -506,6 +506,11 @@ def objective_weight_buttons(objective: str) -> None:
         st.session_state[widget_key] = default
 
     def _on_change():
+        # Préserve les objectifs — w_objectifs n'est pas rendu sur cette page
+        if not st.session_state.draft_answers.get("objectifs"):
+            st.session_state.draft_answers["objectifs"] = (
+                st.session_state.answers.get("objectifs") or []
+            )
         val = st.session_state[widget_key]
         st.session_state.draft_answers.setdefault("objective_weights", {})[objective] = val
 
@@ -1582,6 +1587,9 @@ def _flush_widgets_to_draft() -> None:
             wk = f"w_{key}"
             if wk in st.session_state:
                 st.session_state.draft_answers[key] = st.session_state[wk]
+    # Persiste immédiatement les objectifs dans answers (résiste aux reruns sans widget)
+    if st.session_state.draft_answers.get("objectifs"):
+        st.session_state.answers["objectifs"] = st.session_state.draft_answers["objectifs"]
     # Pondérations objectifs
     for obj in (st.session_state.draft_answers.get("objectifs") or []):
         wk = f"w_objective_weight_{safe_key(obj)}"
@@ -1798,7 +1806,11 @@ def render_subpage(sp_id: str) -> None:
             )
 
     elif sp_id == "poids":
-        selected = list(get_draft("objectifs") or [])
+        # w_objectifs n'est pas rendu ici → fallback sur draft puis answers
+        selected = list(
+            st.session_state.draft_answers.get("objectifs") or
+            st.session_state.answers.get("objectifs") or []
+        )
         if not selected:
             st.warning("Aucun objectif sélectionné. Reviens à la page précédente.")
         else:
@@ -2389,70 +2401,12 @@ ALORS tous les risques restent à 0.
 SI un objectif est pondéré « Très important » ou « Prioritaire »
 ALORS les risques associés sont renforcés dans le scoring.
 
-SI le contrôle familial est recherché ET plusieurs héritiers existent
-ALORS le risque de dilution augmente.
+SI le contrôle familial est recherché ET plusieurs héritiers
+ALORS le risque de dilution du capital est activé.
 
-SI un enfant reprend ET les autres héritiers ne sont pas impliqués
-ALORS le risque de conflit repreneur / non repreneurs augmente.
+SI conjoint présent ET dépendant financièrement ET aucune protection prévue
+ALORS le risque conjoint est critique.
 
-SI une soulte est envisagée MAIS son financement n'est pas validé
-ALORS le risque de liquidité augmente fortement.
-
-SI un Pacte Dutreil est envisagé ET la holding animatrice est incertaine
-ALORS le risque de remise en cause du Dutreil augmente fortement.
-
-SI le conjoint dépend financièrement du dirigeant ET aucune protection n'est prévue
-ALORS le risque de fragilisation du conjoint augmente.
-
-SI nb_enfants = 0 ET objectif = Transmettre l'entreprise
-ALORS le risque successeur augmente (aucun successeur identifiable).
-
-SI famille recomposée
-ALORS risques de conflit héritiers, contestation et conjoint augmentent.
-
-SI valeur entreprise >= 5 M€
-ALORS enjeux fiscaux, Dutreil et contestation activés même hors objectif déclaré.
-    """.strip(), language="text")
-    rules_export = {
-        code: {
-            "objectif": d.objectif,
-            "risque": d.libelle,
-            "gravite_base": d.gravite_base,
-            "outils": d.outils,
-            "justification_des_outils": get_tool_justifications(code),
-            "actions_preventives": d.actions_preventives,
-            "professionnels": d.professionnels,
-        }
-        for code, d in RISK_DEFINITIONS.items()
-    }
-    st.download_button(
-        "Télécharger le dictionnaire des risques (JSON)",
-        data=json.dumps(rules_export, ensure_ascii=False, indent=2).encode("utf-8"),
-        file_name="dictionnaire_risques_holding_familiale.json",
-        mime="application/json",
-    )
-    st.json(rules_export)
-    render_view_navigation("Règles de décision")
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# PAGE : Debug
-# ═══════════════════════════════════════════════════════════════════════════════
-
-elif page == "Debug validation":
-    st.subheader("Debug — Vérification des réponses")
-    st.caption("Vue technique : distingue les réponses en cours et les réponses validées utilisées pour le scoring.")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("### Réponses en cours de saisie")
-        st.json(st.session_state.get("draft_answers", {}))
-    with c2:
-        st.markdown("### Réponses validées (scoring)")
-        st.json(validated_answers)
-    st.markdown("### Sections validées")
-    st.write(sorted(list(st.session_state.validated_steps)))
-    st.markdown("### Scores calculés")
-    st.dataframe(
-        df[["Risque", "Probabilité", "Gravité", "Score", "Niveau", "Signaux retenus"]],
-        use_container_width=True, hide_index=True,
-        column_config={"Signaux retenus": st.column_config.TextColumn(width="large")},
-    )
+SI Pacte Dutreil = Oui ET holding animatrice non qualifiée
+ALORS le risque Dutreil est élevé.
+""")
