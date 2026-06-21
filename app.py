@@ -423,8 +423,15 @@ def selected_objectives_from_draft() -> set:
 def save_step(step: int) -> Tuple[bool, str]:
     """Copie les réponses du brouillon vers answers. Seules answers sont utilisées pour le scoring."""
     keys = STEP_KEYS.get(step, [])
-    if step == 1 and not get_draft("objectifs"):
-        return False, "⚠️ Retourne à la page Objectifs et sélectionne au moins un objectif pour continuer."
+    if step == 1:
+        # Restaure les objectifs depuis cache/answers si draft les a perdus
+        if not st.session_state.draft_answers.get("objectifs"):
+            _obj = (st.session_state.get("_objectifs_cache") or
+                    st.session_state.answers.get("objectifs") or [])
+            if _obj:
+                st.session_state.draft_answers["objectifs"] = list(_obj)
+        if not get_draft("objectifs"):
+            return False, "⚠️ Retourne à la page Objectifs et sélectionne au moins un objectif pour continuer."
 
     for key in keys:
         if f"w_{key}" in st.session_state:
@@ -1613,6 +1620,19 @@ def _flush_widgets_to_draft() -> None:
 def navigate_next(current_idx: int, active_pages: List[Dict]) -> None:
     _flush_widgets_to_draft()
     current = active_pages[current_idx]
+
+    # Validation inline : impossible de quitter "objectifs" sans avoir sélectionné au moins un objectif
+    if current["id"] == "objectifs":
+        obj_selected = (
+            st.session_state.draft_answers.get("objectifs") or
+            st.session_state.get("_objectifs_cache") or
+            st.session_state.answers.get("objectifs") or []
+        )
+        if not obj_selected:
+            st.session_state.nav_error = "⚠️ Sélectionne au moins un objectif pour continuer."
+            st.rerun()
+            return
+
     is_last = current_idx + 1 >= len(active_pages)
     if not is_last:
         next_pg = active_pages[current_idx + 1]
@@ -2418,3 +2438,81 @@ elif page == "Exporter":
 elif page == "Règles de décision":
     st.subheader("Règles de décision du système expert")
     st.write("Chaque réponse validée ajoute des points à certains risques. Aucun signal = niveau Inexistant.")
+    st.code("""
+SI une section n'est pas validée
+ALORS ses réponses ne sont pas utilisées dans le scoring.
+
+SI aucun objectif n'est validé
+ALORS tous les risques restent à 0.
+
+SI un objectif est pondéré « Très important » ou « Prioritaire »
+ALORS les risques associés sont renforcés dans le scoring.
+
+SI le contrôle familial est recherché ET plusieurs héritiers existent
+ALORS le risque de dilution augmente.
+
+SI un enfant reprend ET les autres héritiers ne sont pas impliqués
+ALORS le risque de conflit repreneur / non repreneurs augmente.
+
+SI une soulte est envisagée MAIS son financement n'est pas validé
+ALORS le risque de liquidité augmente fortement.
+
+SI un Pacte Dutreil est envisagé ET la holding animatrice est incertaine
+ALORS le risque de remise en cause du Dutreil augmente fortement.
+
+SI le conjoint dépend financièrement du dirigeant ET aucune protection n'est prévue
+ALORS le risque de fragilisation du conjoint augmente.
+
+SI nb_enfants = 0 ET objectif = Transmettre l'entreprise
+ALORS le risque successeur augmente (aucun successeur identifiable).
+
+SI famille recomposée
+ALORS risques de conflit héritiers, contestation et conjoint augmentent.
+
+SI valeur entreprise >= 5 M€
+ALORS enjeux fiscaux, Dutreil et contestation activés même hors objectif déclaré.
+    """.strip(), language="text")
+    rules_export = {
+        code: {
+            "objectif": d.objectif,
+            "risque": d.libelle,
+            "gravite_base": d.gravite_base,
+            "outils": d.outils,
+            "justification_des_outils": get_tool_justifications(code),
+            "actions_preventives": d.actions_preventives,
+            "professionnels": d.professionnels,
+        }
+        for code, d in RISK_DEFINITIONS.items()
+    }
+    st.download_button(
+        "Télécharger le dictionnaire des risques (JSON)",
+        data=json.dumps(rules_export, ensure_ascii=False, indent=2).encode("utf-8"),
+        file_name="dictionnaire_risques_holding_familiale.json",
+        mime="application/json",
+    )
+    st.json(rules_export)
+    render_view_navigation("Règles de décision")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PAGE : Debug
+# ═══════════════════════════════════════════════════════════════════════════════
+
+elif page == "Debug validation":
+    st.subheader("Debug — Vérification des réponses")
+    st.caption("Vue technique : distingue les réponses en cours et les réponses validées utilisées pour le scoring.")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("### Réponses en cours de saisie")
+        st.json(st.session_state.get("draft_answers", {}))
+    with c2:
+        st.markdown("### Réponses validées (scoring)")
+        st.json(validated_answers)
+    st.markdown("### Sections validées")
+    st.write(sorted(list(st.session_state.validated_steps)))
+    st.markdown("### Scores calculés")
+    st.dataframe(
+        df[["Risque", "Probabilité", "Gravité", "Score", "Niveau", "Signaux retenus"]],
+        use_container_width=True, hide_index=True,
+        column_config={"Signaux retenus": st.column_config.TextColumn(width="large")},
+    )
+    render_view_navigation("Debug validation")
