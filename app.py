@@ -429,9 +429,11 @@ def save_step(step: int) -> Tuple[bool, str]:
 def yes_no_unknown(label: str, key: str, options: List[str] | None = None,
                    horizontal: bool = True) -> Any:
     opts = options or [UNKNOWN, YES, NO]
-    cur = st.session_state.data.get(key, opts[0])
-    idx = opts.index(cur) if cur in opts else 0
-    val = st.radio(label, opts, index=idx, horizontal=horizontal)
+    wk = f"_w_{key}"
+    if wk not in st.session_state:
+        cur = st.session_state.data.get(key, opts[0])
+        st.session_state[wk] = cur if cur in opts else opts[0]
+    val = st.radio(label, opts, key=wk, horizontal=horizontal)
     st.session_state.data[key] = val
     return val
 
@@ -462,10 +464,12 @@ def slider(label: str, key: str, min_value: int, max_value: int) -> Any:
 
 
 def objective_weight_buttons(objective: str) -> None:
-    saved = (st.session_state.data.get("objective_weights") or {}).get(objective, "Important")
-    idx = OBJECTIVE_WEIGHT_OPTIONS.index(saved) if saved in OBJECTIVE_WEIGHT_OPTIONS else 0
+    wk = f"_w_weight_{safe_key(objective)}"
+    if wk not in st.session_state:
+        saved = (st.session_state.data.get("objective_weights") or {}).get(objective, "Important")
+        st.session_state[wk] = saved if saved in OBJECTIVE_WEIGHT_OPTIONS else "Important"
     st.markdown(f"**{objective}**")
-    val = st.radio("Importance", OBJECTIVE_WEIGHT_OPTIONS, index=idx,
+    val = st.radio("Importance", OBJECTIVE_WEIGHT_OPTIONS, key=wk,
                    horizontal=True, label_visibility="collapsed")
     weights = dict(st.session_state.data.get("objective_weights") or {})
     weights[objective] = val
@@ -473,24 +477,29 @@ def objective_weight_buttons(objective: str) -> None:
 
 
 def selectbox(label: str, key: str, options: List[str]) -> Any:
-    cur = st.session_state.data.get(key, options[0] if options else None)
-    if cur not in options:
-        cur = options[0] if options else None
-    val = st.selectbox(label, options, index=options.index(cur) if cur in options else 0)
+    wk = f"_w_{key}"
+    if wk not in st.session_state:
+        cur = st.session_state.data.get(key, options[0] if options else None)
+        st.session_state[wk] = cur if cur in options else (options[0] if options else None)
+    val = st.selectbox(label, options, key=wk)
     st.session_state.data[key] = val
     return val
 
 
 def text_input_field(label: str, key: str, placeholder: str = "") -> Any:
-    cur = st.session_state.data.get(key) or ""
-    val = st.text_input(label, value=cur, placeholder=placeholder)
+    wk = f"_w_{key}"
+    if wk not in st.session_state:
+        st.session_state[wk] = st.session_state.data.get(key) or ""
+    val = st.text_input(label, key=wk, placeholder=placeholder)
     st.session_state.data[key] = val
     return val
 
 
 def text_area_field(label: str, key: str, placeholder: str = "", height: int = 90) -> Any:
-    cur = st.session_state.data.get(key) or ""
-    val = st.text_area(label, value=cur, placeholder=placeholder, height=height)
+    wk = f"_w_{key}"
+    if wk not in st.session_state:
+        st.session_state[wk] = st.session_state.data.get(key) or ""
+    val = st.text_area(label, key=wk, placeholder=placeholder, height=height)
     st.session_state.data[key] = val
     return val
 
