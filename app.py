@@ -1600,9 +1600,12 @@ def _flush_widgets_to_draft() -> None:
                   st.session_state.answers.get("objectifs") or [])
         if cached:
             st.session_state.draft_answers["objectifs"] = list(cached)
-    # 2. Copie les widgets standards
+    # 2. Copie les widgets standards (sauf objectifs/objective_weights gérés séparément)
+    _skip = {"objectifs", "objective_weights"}
     for step_keys in STEP_KEYS.values():
         for key in step_keys:
+            if key in _skip:
+                continue
             wk = f"w_{key}"
             if wk in st.session_state:
                 st.session_state.draft_answers[key] = st.session_state[wk]
@@ -1643,7 +1646,6 @@ def navigate_next(current_idx: int, active_pages: List[Dict]) -> None:
         ok, msg = save_step(current["step"])
         if not ok:
             st.session_state.nav_error = msg
-            # Si les objectifs manquent, redirige vers la page objectifs
             if "objectif" in msg.lower():
                 st.session_state.current_subpage = "objectifs"
             st.rerun()
