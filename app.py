@@ -438,20 +438,25 @@ def yes_no_unknown(label: str, key: str, options: List[str] | None = None,
 
 def number_input(label: str, key: str, **kwargs: Any) -> Any:
     default = kwargs.pop("value", 0)
-    cur = st.session_state.data.get(key, default)
-    try:
-        cur = type(default)(cur)
-    except Exception:
-        cur = default
-    val = st.number_input(label, value=cur, **kwargs)
+    wk = f"_w_{key}"
+    if wk not in st.session_state:
+        cur = st.session_state.data.get(key, default)
+        try:
+            cur = type(default)(cur)
+        except Exception:
+            cur = default
+        st.session_state[wk] = cur
+    val = st.number_input(label, key=wk, **kwargs)
     st.session_state.data[key] = val
     return val
 
 
 def slider(label: str, key: str, min_value: int, max_value: int) -> Any:
-    cur = int(st.session_state.data.get(key, min_value) or min_value)
-    cur = max(min_value, min(max_value, cur))
-    val = st.slider(label, min_value, max_value, value=cur)
+    wk = f"_w_{key}"
+    if wk not in st.session_state:
+        cur = int(st.session_state.data.get(key, min_value) or min_value)
+        st.session_state[wk] = max(min_value, min(max_value, cur))
+    val = st.slider(label, min_value, max_value, key=wk)
     st.session_state.data[key] = val
     return val
 
@@ -1487,7 +1492,7 @@ def is_subpage_active(sp_id: str, draft: Dict) -> bool:
     if sp_id == "poids":
         return bool(objectifs)
     if sp_id == "repreneur":
-        return nb_enfants > 0 and "Transmettre l'entreprise" in objectifs
+        return "Transmettre l'entreprise" in objectifs
     if sp_id == "dialogue":
         return nb_enfants >= 2
     if sp_id == "conjoint":
@@ -1814,17 +1819,20 @@ def render_subpage(sp_id: str) -> None:
             st.caption("Pages qui s'ajouteront automatiquement : " + " · ".join(hints))
 
     elif sp_id == "repreneur":
-        yes_no_unknown("Un héritier repreneur est-il identifié ?", "heritier_repreneur",
-                       [UNKNOWN, YES, NO, UNCERTAIN])
-        if get_draft("heritier_repreneur") == YES and int(get_draft("nb_enfants") or 0) >= 2:
+        yes_no_unknown("Un héritier (ou successeur) repreneur est-il identifié ?",
+                       "heritier_repreneur", [UNKNOWN, YES, NO, UNCERTAIN])
+        if get_draft("heritier_repreneur") == YES:
             st.divider()
-            yes_no_unknown(
-                "Les autres héritiers sont-ils aussi impliqués dans l'entreprise ?",
-                "autres_heritiers_actifs"
-            )
-            selectbox("Volonté probable des héritiers non repreneurs", "volonte_non_repreneurs",
-                      [UNKNOWN, "Rester associés", "Sortir du capital",
-                       "Recevoir principalement une compensation", "Incertain / non abordé"])
+            _nb = int(get_draft("nb_enfants") or 0)
+            if _nb >= 2:
+                yes_no_unknown(
+                    "Les autres héritiers sont-ils aussi impliqués dans l'entreprise ?",
+                    "autres_heritiers_actifs"
+                )
+                selectbox("Volonté probable des héritiers non repreneurs",
+                          "volonte_non_repreneurs",
+                          [UNKNOWN, "Rester associés", "Sortir du capital",
+                           "Recevoir principalement une compensation", "Incertain / non abordé"])
             yes_no_unknown("Une soulte (compensation financière) est-elle envisagée ?",
                            "soulte_envisagee")
             if get_draft("soulte_envisagee") == YES:
@@ -1832,6 +1840,11 @@ def render_subpage(sp_id: str) -> None:
                     "La capacité de financement de la soulte est-elle validée ?",
                     "capacite_financement_soulte"
                 )
+            yes_no_unknown("Le successeur est-il préparé à la direction ?",
+                           "successeur_prepare")
+            selectbox("Calendrier de transmission envisagé", "calendrier_transmission",
+                      [UNKNOWN, "Moins d'1 an", "1 à 3 ans", "3 à 5 ans", "Plus de 5 ans",
+                       "Non défini"])
 
     elif sp_id == "dialogue":
         yes_no_unknown(
