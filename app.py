@@ -1643,6 +1643,9 @@ def navigate_next(current_idx: int, active_pages: List[Dict]) -> None:
         ok, msg = save_step(current["step"])
         if not ok:
             st.session_state.nav_error = msg
+            # Si les objectifs manquent, redirige vers la page objectifs
+            if "objectif" in msg.lower():
+                st.session_state.current_subpage = "objectifs"
             st.rerun()
             return
     st.session_state.nav_error = None
