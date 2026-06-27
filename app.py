@@ -1918,23 +1918,29 @@ def is_subpage_active(sp_id: str, draft: Dict) -> bool:
     if sp_id == "succession_civ":
         return nb_enfants >= 2 or _fam_rec == YES
     if sp_id == "securite_pat":
+        _brf = draft.get("besoin_revenus_famille") or _ans.get("besoin_revenus_famille")
+        _urg = draft.get("urgence_evenement") or _ans.get("urgence_evenement")
         show_div = poids >= 40 or "Diversifier le patrimoine" in objectifs
         show_prev = (show_div or _conjoint == YES
                      or "Protéger le conjoint et les proches" in objectifs
-                     or draft.get("besoin_revenus_famille") in ["Moyen", "Élevé"]
-                     or draft.get("urgence_evenement") == YES)
+                     or _brf in ["Moyen", "Élevé"]
+                     or _urg == YES)
         return show_div or show_prev
     if sp_id == "gouvernance":
+        _brf = draft.get("besoin_revenus_famille") or _ans.get("besoin_revenus_famille")
         return ("Conserver le contrôle familial" in objectifs
                 or nb_enfants >= 2
-                or draft.get("besoin_revenus_famille") in ["Moyen", "Élevé"]
+                or _brf in ["Moyen", "Élevé"]
                 or "Préserver l'équité entre les héritiers" in objectifs)
     if sp_id == "succession_mgmt":
-        return draft.get("heritier_repreneur") in [YES, UNCERTAIN]
+        _heir = draft.get("heritier_repreneur") or _ans.get("heritier_repreneur")
+        return _heir in [YES, UNCERTAIN]
     if sp_id == "fiscalite":
-        return "Optimiser la fiscalité" in objectifs or valeur >= 1_000_000
+        _valeur = int(draft.get("valeur_entreprise") or _ans.get("valeur_entreprise") or 0)
+        return "Optimiser la fiscalité" in objectifs or _valeur >= 1_000_000
     if sp_id == "dutreil":
-        return draft.get("pacte_dutreil") == YES
+        _pact = draft.get("pacte_dutreil") or _ans.get("pacte_dutreil")
+        return _pact == YES
     return True
 
 
@@ -1969,6 +1975,10 @@ def _flush_widgets_to_draft(sp_id: Optional[str] = None) -> None:
 def navigate_next(current_idx: int, active_pages: List[Dict]) -> None:
     current = active_pages[current_idx]
     _flush_widgets_to_draft(current["id"])
+    # Recalcul apres flush : de nouvelles pages peuvent s'etre activees
+    # (ex: nb_enfants vient d'etre saisi -> repreneur/dialogue apparaissent)
+    active_pages = get_active_subpages(st.session_state.draft_answers)
+    current_idx = get_subpage_idx(current["id"], active_pages)
 
     # Validation objectifs obligatoires
     if current["id"] == "objectifs":
