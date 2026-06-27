@@ -1914,30 +1914,29 @@ def get_subpage_idx(sp_id: str, active: List[Dict]) -> int:
 def _flush_widgets_to_draft() -> None:
     """Copie les widgets w_* dans draft (objectifs/weights gérés directement par render_subpage)."""
     _skip = {"objectifs", "objective_weights"}
-    # Clés critiques pour la navigation — ne jamais écraser avec None
+    # Ces clés sont gérées par on_change + sauvegarde explicite dans render_subpage("famille").
+    # Les exclure du flush empêche un widget périmé (valeur 0 conservée par Streamlit
+    # sur une page qui ne le rend pas) d'écraser la valeur correcte dans draft/answers.
     _nav_keys = {"nb_enfants", "conjoint_present", "famille_recomposee", "heritier_repreneur"}
     for step_keys in STEP_KEYS.values():
         for key in step_keys:
-            if key in _skip:
+            if key in _skip or key in _nav_keys:
                 continue
             wk = f"w_{key}"
             if wk in st.session_state:
-                val = st.session_state[wk]
-                # Pour les clés de navigation, ignorer None pour éviter d'écraser
-                # une valeur valide sauvegardée précédemment
-                if key in _nav_keys and val is None:
-                    continue
-                st.session_state.draft_answers[key] = val
+                st.session_state.draft_answers[key] = st.session_state[wk]
 
 
 def navigate_next(current_idx: int, active_pages: List[Dict]) -> None:
     _flush_widgets_to_draft()
-    # Garantir que les valeurs critiques pour la navigation sont dans answers
-    # (évite que le fallback is_subpage_active perde nb_enfants entre deux reruns)
+    # Après le flush, resynchroniser draft depuis answers pour les clés de navigation.
+    # answers est la source fiable (écrit par la sauvegarde explicite de render_subpage("famille")
+    # et par on_change). Le flush ne les touche plus, mais un rerun précédent aurait pu
+    # laisser draft incohérent.
     for _k in ("nb_enfants", "conjoint_present", "famille_recomposee", "heritier_repreneur"):
-        _v = st.session_state.draft_answers.get(_k)
+        _v = st.session_state.answers.get(_k)
         if _v is not None:
-            st.session_state.answers[_k] = _v
+            st.session_state.draft_answers[_k] = _v
     current = active_pages[current_idx]
 
     # Validation objectifs obligatoires
