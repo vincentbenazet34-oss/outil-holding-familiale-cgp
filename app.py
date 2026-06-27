@@ -2335,10 +2335,17 @@ def render_nav_buttons(current_idx: int, active_pages: List[Dict]) -> None:
     is_last = current_idx + 1 >= len(active_pages)
 
     if current["id"] == "synthese":
-        if st.button("Voir les résultats complets →", type="primary",
-                     key="synth_to_results", use_container_width=True):
-            st.session_state.app_page = "Résultats et solutions"
-            st.rerun()
+        st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+        c1, _, c3 = st.columns([1.5, 4, 1.5])
+        with c1:
+            if current_idx > 0:
+                if st.button("← Précédent", key="synth_prev"):
+                    navigate_prev(current_idx, active_pages)
+        with c3:
+            if st.button("Voir les résultats →", type="primary",
+                         key="synth_to_results", use_container_width=True):
+                st.session_state.app_page = "Résultats et solutions"
+                st.rerun()
         return
 
     if not is_last:
