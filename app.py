@@ -288,7 +288,7 @@ DEFAULT_ANSWERS: Dict[str, Any] = {
 }
 
 STEP_KEYS: Dict[int, List[str]] = {
-    1: ["client_name", "client_age", "company_name", "company_activity", "company_form", "cgp_name", "entretien_date", "objectif_libre", "attentes_client", "contraintes_client", "personnes_a_associer", "observations", "maturite_projet", "delai_transmission", "urgence_evenement", "qualite_information", "objectifs", "objective_weights"],
+    1: ["client_name", "client_age", "company_name", "company_activity", "company_form", "cgp_name", "entretien_date", "rapport_orientation", "niveau_detail", "objectif_libre", "attentes_client", "contraintes_client", "personnes_a_associer", "observations", "maturite_projet", "delai_transmission", "urgence_evenement", "qualite_information", "objectifs", "objective_weights"],
     2: ["nb_enfants", "conjoint_present", "famille_recomposee", "dialogue_familial", "accord_conjoint", "heritier_repreneur", "autres_heritiers_actifs", "volonte_non_repreneurs", "soulte_envisagee", "capacite_financement_soulte", "conjoint_dependant", "protection_conjoint_prevue", "regime_matrimonial_adapte", "valorisation_independante", "audit_civil"],
     3: ["valeur_entreprise", "poids_entreprise", "actifs_liquides", "endettement_familial", "besoin_revenus_famille", "diversification", "prevoyance"],
     4: ["clauses_entree_sortie", "gouvernance_formalisee", "associes_actifs_passifs", "politique_dividendes_definie", "entreprise_dependante_dirigeant", "successeur_prepare", "calendrier_transmission"],
@@ -2572,13 +2572,17 @@ if page == "Questionnaire adaptatif":
     current_sp = st.session_state.get("current_subpage", "dossier")
     active_ids = [p["id"] for p in active_pages]
     if current_sp not in active_ids:
-        # Fallback vers la page précédente la plus proche au lieu du début
+        # Fallback: avant d'abord (nav forward vers page inactive),
+        # puis arriere si rien devant (page courante devenue inactive)
         _all_ids = [sp["id"] for sp in ALL_SUBPAGES]
         if current_sp in _all_ids:
             _pos = _all_ids.index(current_sp)
             current_sp = next(
-                (pid for pid in reversed(_all_ids[:_pos]) if pid in active_ids),
-                active_ids[0] if active_ids else "dossier"
+                (pid for pid in _all_ids[_pos + 1:] if pid in active_ids),
+                next(
+                    (pid for pid in reversed(_all_ids[:_pos]) if pid in active_ids),
+                    active_ids[0] if active_ids else "dossier"
+                )
             )
         else:
             current_sp = active_ids[0] if active_ids else "dossier"
@@ -2715,20 +2719,14 @@ elif page == "Exporter":
     _cur_detail = st.session_state.answers.get("niveau_detail", "Détaillé")
     _ec1, _ec2 = st.columns(2)
     with _ec1:
-        _new_orient = st.selectbox(
-            "Orientation du rapport",
-            _orient_opts,
+        _new_orient = st.selectbox("Orientation du rapport", _orient_opts,
             index=_orient_opts.index(_cur_orient) if _cur_orient in _orient_opts else 0,
-            key="export_rapport_orientation",
-        )
+            key="export_rapport_orientation")
         st.caption("Influence la structure narrative et le ton du rapport Word.")
     with _ec2:
-        _new_detail = st.selectbox(
-            "Niveau de détail",
-            _detail_opts,
+        _new_detail = st.selectbox("Niveau de détail", _detail_opts,
             index=_detail_opts.index(_cur_detail) if _cur_detail in _detail_opts else 1,
-            key="export_niveau_detail",
-        )
+            key="export_niveau_detail")
         st.caption("Détaillé et Très détaillé affichent justifications outils et actions préventives.")
     st.session_state.answers["rapport_orientation"] = _new_orient
     st.session_state.answers["niveau_detail"] = _new_detail
