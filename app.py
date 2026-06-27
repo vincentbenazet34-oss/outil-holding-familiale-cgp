@@ -615,23 +615,24 @@ def calculate_risks(a: Dict) -> Tuple[pd.DataFrame, Dict[str, List[str]]]:
                 add_points(points, evidence, "successeur", 2,
                            "Héritier repreneur incertain")
 
-        if nb_enfants >= 2 and a.get("heritier_repreneur") == YES:
-            if is_no(a, "autres_heritiers_actifs"):
-                add_points(points, evidence, "conflit_heritiers", 3,
-                           "Les autres héritiers ne sont pas impliqués dans l'entreprise")
-            if a.get("volonte_non_repreneurs") in ["Sortir du capital", "Incertain / non abordé"]:
-                add_points(points, evidence, "conflit_heritiers", 2,
-                           f"Volonté des non repreneurs : {a.get('volonte_non_repreneurs', '?')}")
-            if a.get("soulte_envisagee") == YES and is_no(a, "capacite_financement_soulte"):
-                add_points(points, evidence, "liquidite", 3,
-                           "Soulte envisagée mais capacité de financement non validée")
-            elif a.get("soulte_envisagee") == YES:
-                add_points(points, evidence, "liquidite", 1,
-                           "Soulte envisagée : vérifier la faisabilité du financement")
-
-        if nb_enfants >= 2 and is_no(a, "dialogue_familial"):
+    # ── Conflit héritiers / liquidité (toujours scoré si répondu) ───────────
+    if nb_enfants >= 2 and a.get("heritier_repreneur") == YES:
+        if is_no(a, "autres_heritiers_actifs"):
+            add_points(points, evidence, "conflit_heritiers", 3,
+                       "Les autres héritiers ne sont pas impliqués dans l'entreprise")
+        if a.get("volonte_non_repreneurs") in ["Sortir du capital", "Incertain / non abordé"]:
             add_points(points, evidence, "conflit_heritiers", 2,
-                       "Aucun dialogue familial n'a encore été organisé")
+                       f"Volonté des non repreneurs : {a.get('volonte_non_repreneurs', '?')}")
+        if a.get("soulte_envisagee") == YES and is_no(a, "capacite_financement_soulte"):
+            add_points(points, evidence, "liquidite", 3,
+                       "Soulte envisagée mais capacité de financement non validée")
+        elif a.get("soulte_envisagee") == YES:
+            add_points(points, evidence, "liquidite", 1,
+                       "Soulte envisagée : vérifier la faisabilité du financement")
+
+    if nb_enfants >= 2 and is_no(a, "dialogue_familial"):
+        add_points(points, evidence, "conflit_heritiers", 2,
+                   "Aucun dialogue familial n'a encore été organisé")
 
     # ── Optimiser la fiscalité ────────────────────────────────────────────────
     if "Optimiser la fiscalité" in objectifs:
