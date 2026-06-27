@@ -587,6 +587,20 @@ def calculate_risks(a: Dict) -> Tuple[pd.DataFrame, Dict[str, List[str]]]:
             add_points(points, evidence, "tiers", 1,
                        "Famille recomposée : complexité accrue des droits patrimoniaux")
 
+    # ── Successeur / pérennité (toujours scoré si répondu) ───────────────────
+    if is_no(a, "successeur_prepare"):
+        add_points(points, evidence, "successeur", 2,
+                   "Le successeur n'est pas encore préparé à reprendre la direction")
+    elif a.get("successeur_prepare") == UNCERTAIN:
+        add_points(points, evidence, "successeur", 1,
+                   "Préparation du successeur incertaine")
+    if a.get("calendrier_transmission") in [UNKNOWN, "Non défini"]:
+        add_points(points, evidence, "successeur", 1,
+                   "Pas de calendrier de transmission du pouvoir")
+    if is_yes(a, "entreprise_dependante_dirigeant"):
+        add_points(points, evidence, "successeur", 2,
+                   "L'entreprise est fortement dépendante du dirigeant actuel")
+
     # ── Transmettre l'entreprise ──────────────────────────────────────────────
     if "Transmettre l'entreprise" in objectifs:
         if nb_enfants == 0:
@@ -600,19 +614,6 @@ def calculate_risks(a: Dict) -> Tuple[pd.DataFrame, Dict[str, List[str]]]:
             elif a.get("heritier_repreneur") == UNCERTAIN:
                 add_points(points, evidence, "successeur", 2,
                            "Héritier repreneur incertain")
-            if a.get("heritier_repreneur") == YES:
-                if is_no(a, "successeur_prepare"):
-                    add_points(points, evidence, "successeur", 2,
-                               "Le successeur n'est pas encore préparé à reprendre la direction")
-                elif a.get("successeur_prepare") == UNCERTAIN:
-                    add_points(points, evidence, "successeur", 1,
-                               "Préparation du successeur incertaine")
-                if is_no(a, "calendrier_transmission"):
-                    add_points(points, evidence, "successeur", 1,
-                               "Pas de calendrier de transmission du pouvoir")
-        if is_yes(a, "entreprise_dependante_dirigeant"):
-            add_points(points, evidence, "successeur", 2,
-                       "L'entreprise est fortement dépendante du dirigeant actuel")
 
         if nb_enfants >= 2 and a.get("heritier_repreneur") == YES:
             if is_no(a, "autres_heritiers_actifs"):
@@ -2164,11 +2165,6 @@ def render_subpage(sp_id: str) -> None:
                     "La capacité de financement de la soulte est-elle validée ?",
                     "capacite_financement_soulte"
                 )
-            yes_no_unknown("Le successeur est-il préparé à la direction ?",
-                           "successeur_prepare")
-            selectbox("Calendrier de transmission envisagé", "calendrier_transmission",
-                      [UNKNOWN, "Moins d'1 an", "1 à 3 ans", "3 à 5 ans", "Plus de 5 ans",
-                       "Non défini"])
 
     elif sp_id == "dialogue":
         yes_no_unknown(
