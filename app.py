@@ -1914,13 +1914,9 @@ def get_subpage_idx(sp_id: str, active: List[Dict]) -> int:
 def _flush_widgets_to_draft() -> None:
     """Copie les widgets w_* dans draft (objectifs/weights gérés directement par render_subpage)."""
     _skip = {"objectifs", "objective_weights"}
-    # Ces clés sont gérées par on_change + sauvegarde explicite dans render_subpage("famille").
-    # Les exclure du flush empêche un widget périmé (valeur 0 conservée par Streamlit
-    # sur une page qui ne le rend pas) d'écraser la valeur correcte dans draft/answers.
-    _nav_keys = {"nb_enfants", "conjoint_present", "famille_recomposee", "heritier_repreneur"}
     for step_keys in STEP_KEYS.values():
         for key in step_keys:
-            if key in _skip or key in _nav_keys:
+            if key in _skip:
                 continue
             wk = f"w_{key}"
             if wk in st.session_state:
@@ -1929,14 +1925,6 @@ def _flush_widgets_to_draft() -> None:
 
 def navigate_next(current_idx: int, active_pages: List[Dict]) -> None:
     _flush_widgets_to_draft()
-    # Après le flush, resynchroniser draft depuis answers pour les clés de navigation.
-    # answers est la source fiable (écrit par la sauvegarde explicite de render_subpage("famille")
-    # et par on_change). Le flush ne les touche plus, mais un rerun précédent aurait pu
-    # laisser draft incohérent.
-    for _k in ("nb_enfants", "conjoint_present", "famille_recomposee", "heritier_repreneur"):
-        _v = st.session_state.answers.get(_k)
-        if _v is not None:
-            st.session_state.draft_answers[_k] = _v
     current = active_pages[current_idx]
 
     # Validation objectifs obligatoires
@@ -2742,7 +2730,6 @@ elif page == "Exporter":
             key="export_niveau_detail",
         )
         st.caption("Détaillé et Très détaillé affichent justifications outils et actions préventives.")
-    # Persist immediately so validated_answers (rebuilt on rerun) picks them up
     st.session_state.answers["rapport_orientation"] = _new_orient
     st.session_state.answers["niveau_detail"] = _new_detail
     validated_answers["rapport_orientation"] = _new_orient
@@ -2794,6 +2781,14 @@ elif page == "Exporter":
             st.error(f"Indisponible : {exc}")
 
     st.divider()
+    orientation = validated_answers.get("rapport_orientation", "Équilibré")
+    section_card(f"Contenu du rapport — Orientation : {orientation}", "ℹ️")
+    st.info(
+        "**Synthétique** : risques prioritaires et décisions uniquement.  \n"
+        "**Pédagogique** : explications accessibles, lexique, pédagogie famille.  \n"
+        "**Équilibré** : analyse complète avec scoring et plan d'action.  \n"
+        "**Technique** : scoring détaillé, signaux retenus, validations professionnelles."
+    )
 
     if not detected_df.empty:
         section_card("Aperçu — Risques détectés", "📋")
