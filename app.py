@@ -296,6 +296,36 @@ STEP_KEYS: Dict[int, List[str]] = {
     6: [],
 }
 
+
+# Mapping subpage → clés rendues sur cette page uniquement.
+# Utilisé par _flush_widgets_to_draft pour éviter d'écraser des valeurs
+# de navigation (nb_enfants, etc.) avec des widgets stale d'une autre page.
+SUBPAGE_KEYS: Dict[str, List[str]] = {
+    "dossier":        ["client_name", "client_age", "company_name", "company_activity",
+                       "company_form", "cgp_name", "entretien_date", "qualite_information"],
+    "maturite":       ["maturite_projet", "delai_transmission", "urgence_evenement"],
+    "objectifs":      ["objectifs"],
+    "poids":          ["objective_weights"],
+    "rapport":        ["objectif_libre", "attentes_client", "contraintes_client",
+                       "personnes_a_associer", "observations"],
+    "famille":        ["nb_enfants", "conjoint_present", "famille_recomposee", "accord_conjoint"],
+    "repreneur":      ["heritier_repreneur", "autres_heritiers_actifs", "volonte_non_repreneurs",
+                       "soulte_envisagee", "capacite_financement_soulte"],
+    "dialogue":       ["dialogue_familial"],
+    "conjoint":       ["conjoint_dependant", "protection_conjoint_prevue", "regime_matrimonial_adapte"],
+    "succession_civ": ["valorisation_independante", "audit_civil"],
+    "patrimoine":     ["valeur_entreprise", "poids_entreprise", "actifs_liquides",
+                       "endettement_familial", "besoin_revenus_famille"],
+    "securite_pat":   ["diversification", "prevoyance"],
+    "gouvernance":    ["clauses_entree_sortie", "gouvernance_formalisee",
+                       "associes_actifs_passifs", "politique_dividendes_definie"],
+    "continuite":     ["entreprise_dependante_dirigeant"],
+    "succession_mgmt":["successeur_prepare", "calendrier_transmission"],
+    "fiscalite":      ["simulation_fiscale", "pacte_dutreil"],
+    "dutreil":        ["holding_animatrice", "audit_dutreil", "suivi_engagements"],
+    "suivi":          ["suivi_annuel", "formalisation_rapport"],
+}
+
 PRIORITY_ORDER = {"Critique": 4, "Élevé": 3, "Moyen": 2, "Faible": 1, "Inexistant": 0}
 PRIORITY_COLORS = {"Critique": "#7f1d1d", "Élevé": "#b45309", "Moyen": "#1d4ed8", "Faible": "#047857", "Inexistant": "#6b7280"}
 
@@ -420,8 +450,11 @@ def selected_objectives_from_draft() -> set:
     return set(get_draft("objectifs") or [])
 
 
-def save_step(step: int) -> Tuple[bool, str]:
-    """Copie les réponses du brouillon vers answers. Seules answers sont utilisées pour le scoring."""
+def save_step(step: int, sp_id: Optional[str] = None) -> Tuple[bool, str]:
+    """Copie les réponses du brouillon vers answers. Seules answers sont utilisées pour le scoring.
+    sp_id : sous-page courante — limite le mini-flush aux widgets de cette page uniquement
+    pour eviter qu'un widget stale (ex: w_nb_enfants=0 hors famille) ecrase draft.
+    """
     keys = STEP_KEYS.get(step, [])
     if step == 1:
         # objectifs sauvegardés en continu dans draft + answers par render_subpage
@@ -431,9 +464,12 @@ def save_step(step: int) -> Tuple[bool, str]:
         st.session_state.draft_answers["objectifs"] = list(_obj)
 
     _no_widget = {"objectifs", "objective_weights"}
+    _sp_keys = set(SUBPAGE_KEYS.get(sp_id, [])) if sp_id else None
     for key in keys:
         if key not in _no_widget and f"w_{key}" in st.session_state:
-            st.session_state.draft_answers[key] = st.session_state[f"w_{key}"]
+            # Mini-flush uniquement pour les clés de la page courante
+            if _sp_keys is None or key in _sp_keys:
+                st.session_state.draft_answers[key] = st.session_state[f"w_{key}"]
         st.session_state.answers[key] = st.session_state.draft_answers.get(
             key, st.session_state.answers.get(key, DEFAULT_ANSWERS.get(key))
         )
@@ -1911,12 +1947,19 @@ def get_subpage_idx(sp_id: str, active: List[Dict]) -> int:
     return ids.index(sp_id) if sp_id in ids else 0
 
 
-def _flush_widgets_to_draft() -> None:
-    """Copie les widgets w_* dans draft (objectifs/weights gérés directement par render_subpage)."""
+def _flush_widgets_to_draft(sp_id: Optional[str] = None) -> None:
+    """Copie les widgets w_* dans draft.
+    Si sp_id est fourni, ne flush QUE les clés de cette sous-page pour éviter
+    qu'un widget stale d'une autre page (ex: w_nb_enfants=0 hors famille)
+    n'ecrase une valeur de navigation correcte dans draft/answers.
+    """
     _skip = {"objectifs", "objective_weights"}
+    _allowed = set(SUBPAGE_KEYS.get(sp_id, [])) if sp_id else None
     for step_keys in STEP_KEYS.values():
         for key in step_keys:
             if key in _skip:
+                continue
+            if _allowed is not None and key not in _allowed:
                 continue
             wk = f"w_{key}"
             if wk in st.session_state:
@@ -1924,8 +1967,8 @@ def _flush_widgets_to_draft() -> None:
 
 
 def navigate_next(current_idx: int, active_pages: List[Dict]) -> None:
-    _flush_widgets_to_draft()
     current = active_pages[current_idx]
+    _flush_widgets_to_draft(current["id"])
 
     # Validation objectifs obligatoires
     if current["id"] == "objectifs":
@@ -1942,7 +1985,7 @@ def navigate_next(current_idx: int, active_pages: List[Dict]) -> None:
     else:
         crosses = current["step"] is not None
     if crosses:
-        ok, msg = save_step(current["step"])
+        ok, msg = save_step(current["step"], current["id"])
         if not ok:
             st.session_state.nav_error = msg
             if "objectif" in msg.lower():
@@ -1955,7 +1998,7 @@ def navigate_next(current_idx: int, active_pages: List[Dict]) -> None:
 
 
 def navigate_prev(current_idx: int, active_pages: List[Dict]) -> None:
-    _flush_widgets_to_draft()
+    _flush_widgets_to_draft(active_pages[current_idx]["id"])
     if current_idx > 0:
         st.session_state.nav_error = None
         st.session_state.current_subpage = active_pages[current_idx - 1]["id"]
