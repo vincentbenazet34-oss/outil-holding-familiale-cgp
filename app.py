@@ -288,7 +288,7 @@ DEFAULT_ANSWERS: Dict[str, Any] = {
 }
 
 STEP_KEYS: Dict[int, List[str]] = {
-    1: ["client_name", "client_age", "company_name", "company_activity", "company_form", "cgp_name", "entretien_date", "rapport_orientation", "niveau_detail", "objectif_libre", "attentes_client", "contraintes_client", "personnes_a_associer", "observations", "maturite_projet", "delai_transmission", "urgence_evenement", "qualite_information", "objectifs", "objective_weights"],
+    1: ["client_name", "client_age", "company_name", "company_activity", "company_form", "cgp_name", "entretien_date", "objectif_libre", "attentes_client", "contraintes_client", "personnes_a_associer", "observations", "maturite_projet", "delai_transmission", "urgence_evenement", "qualite_information", "objectifs", "objective_weights"],
     2: ["nb_enfants", "conjoint_present", "famille_recomposee", "dialogue_familial", "accord_conjoint", "heritier_repreneur", "autres_heritiers_actifs", "volonte_non_repreneurs", "soulte_envisagee", "capacite_financement_soulte", "conjoint_dependant", "protection_conjoint_prevue", "regime_matrimonial_adapte", "valorisation_independante", "audit_civil"],
     3: ["valeur_entreprise", "poids_entreprise", "actifs_liquides", "endettement_familial", "besoin_revenus_famille", "diversification", "prevoyance"],
     4: ["clauses_entree_sortie", "gouvernance_formalisee", "associes_actifs_passifs", "politique_dividendes_definie", "entreprise_dependante_dirigeant", "successeur_prepare", "calendrier_transmission"],
@@ -2210,15 +2210,6 @@ def render_subpage(sp_id: str) -> None:
             st.session_state.answers["objective_weights"] = _new_w
 
     elif sp_id == "rapport":
-        c1, c2 = st.columns(2)
-        with c1:
-            selectbox("Orientation du rapport exporté", "rapport_orientation",
-                      ["Équilibré", "Très pédagogique",
-                       "Synthétique et décisionnel", "Approfondi et technique"])
-            st.caption("Modifie la structure et le niveau de détail du rapport Word.")
-        with c2:
-            selectbox("Niveau de détail", "niveau_detail",
-                      ["Synthétique", "Détaillé", "Très détaillé"])
         text_area_field(
             "Objectif exprimé par le client (ses propres mots)", "objectif_libre",
             "Ex. transmettre progressivement à mon fils sans léser mes autres enfants"
@@ -2717,6 +2708,34 @@ elif page == "Exporter":
     elif n_valid < 3:
         st.info(f"ℹ️ {n_valid}/5 sections validées. Tu peux exporter, mais le diagnostic sera partiel.")
 
+    section_card("Style du rapport", "🎨")
+    _orient_opts = ["Équilibré", "Très pédagogique", "Synthétique et décisionnel", "Approfondi et technique"]
+    _detail_opts = ["Synthétique", "Détaillé", "Très détaillé"]
+    _cur_orient = st.session_state.answers.get("rapport_orientation", "Équilibré")
+    _cur_detail = st.session_state.answers.get("niveau_detail", "Détaillé")
+    _ec1, _ec2 = st.columns(2)
+    with _ec1:
+        _new_orient = st.selectbox(
+            "Orientation du rapport",
+            _orient_opts,
+            index=_orient_opts.index(_cur_orient) if _cur_orient in _orient_opts else 0,
+            key="export_rapport_orientation",
+        )
+        st.caption("Influence la structure narrative et le ton du rapport Word.")
+    with _ec2:
+        _new_detail = st.selectbox(
+            "Niveau de détail",
+            _detail_opts,
+            index=_detail_opts.index(_cur_detail) if _cur_detail in _detail_opts else 1,
+            key="export_niveau_detail",
+        )
+        st.caption("Détaillé et Très détaillé affichent justifications outils et actions préventives.")
+    # Persist immediately so validated_answers (rebuilt on rerun) picks them up
+    st.session_state.answers["rapport_orientation"] = _new_orient
+    st.session_state.answers["niveau_detail"] = _new_detail
+    validated_answers["rapport_orientation"] = _new_orient
+    validated_answers["niveau_detail"] = _new_detail
+
     section_card("Télécharger", "⬇️")
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -2763,14 +2782,6 @@ elif page == "Exporter":
             st.error(f"Indisponible : {exc}")
 
     st.divider()
-    orientation = validated_answers.get("rapport_orientation", "Équilibré")
-    section_card(f"Contenu du rapport — Orientation : {orientation}", "ℹ️")
-    st.info(
-        "**Synthétique** : risques prioritaires et décisions uniquement.  \n"
-        "**Pédagogique** : explications accessibles, lexique, pédagogie famille.  \n"
-        "**Équilibré** : analyse complète avec scoring et plan d'action.  \n"
-        "**Technique** : scoring détaillé, signaux retenus, validations professionnelles."
-    )
 
     if not detected_df.empty:
         section_card("Aperçu — Risques détectés", "📋")
