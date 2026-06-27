@@ -2661,6 +2661,19 @@ if page == "Questionnaire adaptatif":
     render_subpage(current_sp)
     render_nav_buttons(current_idx, active_pages)
 
+    # ── DEBUG TEMPORAIRE (supprimer apres diagnostic) ──────────────────────
+    with st.expander("🔍 Debug navigation (temporaire)", expanded=False):
+        _d = st.session_state.draft_answers
+        _a = st.session_state.answers
+        st.write("**draft nb_enfants:**", _d.get("nb_enfants"), " | **answers nb_enfants:**", _a.get("nb_enfants"))
+        st.write("**draft objectifs:**", _d.get("objectifs"))
+        st.write("**answers objectifs:**", _a.get("objectifs"))
+        _test_obj = set(_d.get("objectifs") or _a.get("objectifs") or [])
+        _test_nb = int(_d.get("nb_enfants") or _a.get("nb_enfants") or 0)
+        st.write("**repreneur actif?**", _test_nb > 0 and "Transmettre l'entreprise" in _test_obj)
+        st.write("**Pages actives:**", [p["id"] for p in active_pages])
+        st.write("**w_nb_enfants in ss:**", st.session_state.get("w_nb_enfants", "ABSENT"))
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # PAGE : Résultats et solutions
 # ═══════════════════════════════════════════════════════════════════════════════
