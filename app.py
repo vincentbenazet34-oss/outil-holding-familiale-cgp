@@ -2319,15 +2319,22 @@ def render_subpage(sp_id: str) -> None:
     elif sp_id == "repreneur":
         yes_no_unknown("Un héritier repreneur est-il identifié ?", "heritier_repreneur",
                        [UNKNOWN, YES, NO, UNCERTAIN])
-        if get_draft("heritier_repreneur") == YES and int(get_draft("nb_enfants") or 0) >= 2:
+        if get_draft("heritier_repreneur") == YES:
             st.divider()
-            yes_no_unknown(
-                "Les autres héritiers sont-ils aussi impliqués dans l'entreprise ?",
-                "autres_heritiers_actifs"
+            # nb_enfants depuis draft ou answers (widget non rendu sur cette page)
+            _nb = int(
+                st.session_state.draft_answers.get("nb_enfants")
+                or st.session_state.answers.get("nb_enfants")
+                or 0
             )
-            selectbox("Volonté probable des héritiers non repreneurs", "volonte_non_repreneurs",
-                      [UNKNOWN, "Rester associés", "Sortir du capital",
-                       "Recevoir principalement une compensation", "Incertain / non abordé"])
+            if _nb >= 2:
+                yes_no_unknown(
+                    "Les autres héritiers sont-ils aussi impliqués dans l'entreprise ?",
+                    "autres_heritiers_actifs"
+                )
+                selectbox("Volonté probable des héritiers non repreneurs", "volonte_non_repreneurs",
+                          [UNKNOWN, "Rester associés", "Sortir du capital",
+                           "Recevoir principalement une compensation", "Incertain / non abordé"])
             yes_no_unknown("Une soulte (compensation financière) est-elle envisagée ?",
                            "soulte_envisagee")
             if get_draft("soulte_envisagee") == YES:
