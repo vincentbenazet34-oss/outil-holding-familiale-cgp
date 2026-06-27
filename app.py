@@ -2098,18 +2098,13 @@ st.markdown("""
 # Merge : draft (plus récent) surcharge answers (validé par save_step)
 # Garantit que toutes les réponses saisies sont prises en compte même sans
 # avoir traversé chaque frontière d'étape.
+# validated_answers = answers (save_step) surcharges par draft (on_change + flush).
+# La boucle widgets est volontairement absente : les valeurs w_* peuvent etre
+# stale (widget non rendu sur la page courante) et ecraser des donnees correctes.
 validated_answers = dict(st.session_state.answers)
 for _k, _v in st.session_state.draft_answers.items():
     if _v is not None:
         validated_answers[_k] = _v
-# Inclure aussi les widgets actifs du questionnaire (page courante)
-for _step_keys in STEP_KEYS.values():
-    for _wkey in _step_keys:
-        if _wkey in {"objectifs", "objective_weights"}:
-            continue
-        _wk = f"w_{_wkey}"
-        if _wk in st.session_state and st.session_state[_wk] is not None:
-            validated_answers[_wkey] = st.session_state[_wk]
 # Source la plus fiable pour objectifs : _obj_sel stocké hors widgets
 if st.session_state.get("_obj_sel") is not None:
     validated_answers["objectifs"] = list(st.session_state["_obj_sel"])
