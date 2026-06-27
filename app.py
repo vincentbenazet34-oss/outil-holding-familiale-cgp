@@ -1914,17 +1914,30 @@ def get_subpage_idx(sp_id: str, active: List[Dict]) -> int:
 def _flush_widgets_to_draft() -> None:
     """Copie les widgets w_* dans draft (objectifs/weights gérés directement par render_subpage)."""
     _skip = {"objectifs", "objective_weights"}
+    # Clés critiques pour la navigation — ne jamais écraser avec None
+    _nav_keys = {"nb_enfants", "conjoint_present", "famille_recomposee", "heritier_repreneur"}
     for step_keys in STEP_KEYS.values():
         for key in step_keys:
             if key in _skip:
                 continue
             wk = f"w_{key}"
             if wk in st.session_state:
-                st.session_state.draft_answers[key] = st.session_state[wk]
+                val = st.session_state[wk]
+                # Pour les clés de navigation, ignorer None pour éviter d'écraser
+                # une valeur valide sauvegardée précédemment
+                if key in _nav_keys and val is None:
+                    continue
+                st.session_state.draft_answers[key] = val
 
 
 def navigate_next(current_idx: int, active_pages: List[Dict]) -> None:
     _flush_widgets_to_draft()
+    # Garantir que les valeurs critiques pour la navigation sont dans answers
+    # (évite que le fallback is_subpage_active perde nb_enfants entre deux reruns)
+    for _k in ("nb_enfants", "conjoint_present", "famille_recomposee", "heritier_repreneur"):
+        _v = st.session_state.draft_answers.get(_k)
+        if _v is not None:
+            st.session_state.answers[_k] = _v
     current = active_pages[current_idx]
 
     # Validation objectifs obligatoires
