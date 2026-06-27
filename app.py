@@ -1071,12 +1071,12 @@ def markdown_report(client_name: str, answers: Dict, df: pd.DataFrame) -> str:
         "|--------|-------|--------|",
     ]
     for _, row in detected.iterrows():
-        out.append(f"| {row['Risque']} | {int(row['Score'])} | **{row['Niveau']}** |")
+        out.append(f"| {row['Risque']} | {row['Score']} | **{row['Niveau']}** |")
     out += ["", "---", "", "## Analyse détaillée par risque", ""]
     for _, row in detected.iterrows():
         definition = RISK_DEFINITIONS[row["Code"]]
         out += [
-            f"### {row['Risque']} — {row['Niveau']} (Score : {int(row['Score'])})",
+            f"### {row['Risque']} — {row['Niveau']} (Score : {row['Score']})",
             f"*Objectif concerné : {definition.objectif}*",
             "",
             "**Outils à étudier :** " + ", ".join(definition.outils),
@@ -1118,6 +1118,13 @@ def create_docx_report(client_name: str, answers: Dict, df: pd.DataFrame, eviden
         raise RuntimeError("La dépendance python-docx n'est pas installée.")
 
     detected = df[df["Score"] > 0].sort_values("Score", ascending=False).copy()
+
+    # Style / niveau de détail
+    orientation = answers.get("rapport_orientation", "Équilibré")
+    niveau      = answers.get("niveau_detail", "Détaillé")
+    show_justifs   = niveau in ("Détaillé", "Très détaillé") or orientation in ("Très pédagogique", "Approfondi et technique")
+    show_preventif = niveau in ("Détaillé", "Très détaillé") or orientation in ("Très pédagogique", "Approfondi et technique")
+    show_pros      = niveau == "Très détaillé" or orientation == "Approfondi et technique"
 
     # Palette
     C_PRIMARY = "0B6E82"
@@ -1420,7 +1427,7 @@ def create_docx_report(client_name: str, answers: Dict, df: pd.DataFrame, eviden
             tbl_sum.rows[i].cells[1].text = str(row.get("Objectif", ""))
             cell_write(tbl_sum.rows[i].cells[2], niveau, bold=True, size=9,
                        color=fg_c, align=WD_ALIGN_PARAGRAPH.CENTER)
-            cell_write(tbl_sum.rows[i].cells[3], str(int(row["Score"])),
+            cell_write(tbl_sum.rows[i].cells[3], str(row["Score"]),
                        bold=True, size=9, color=fg_c, align=WD_ALIGN_PARAGRAPH.CENTER)
             for j in range(4):
                 set_cell_border(tbl_sum.rows[i].cells[j], color=C_BORDER)
@@ -1508,10 +1515,12 @@ def create_docx_report(client_name: str, answers: Dict, df: pd.DataFrame, eviden
             risque_name = str(row["Risque"])
             titre = str(k + 1) + ".  " + risque_name
             band_para(titre, fg=C_WHITE, bg=fg_c, size=12, bold=True, sb=120, sa=0)
+            pond_label = str(row.get("Pondération objectif", "Important"))
             meta = ("Niveau : " + niveau
-                    + "   ·   Score : " + str(int(row["Score"]))
+                    + "   ·   Score : " + str(row["Score"])
                     + "   ·   Probabilité : " + str(int(row["Probabilité"])) + "/5"
-                    + "   ·   Gravité : " + str(int(row["Gravité"])) + "/5")
+                    + "   ·   Gravité : " + str(int(row["Gravité"])) + "/5"
+                    + "   ·   Pondération : " + pond_label)
             band_para(meta, fg=fg_c, bg=bg_c, size=9, bold=False, sb=0, sa=80)
             signals = evidence.get(code, [])
             if signals:
@@ -1524,13 +1533,16 @@ def create_docx_report(client_name: str, answers: Dict, df: pd.DataFrame, eviden
                     bullet_item(c)
             if definition.outils:
                 sub_title("Outils & solutions")
+                tool_justifs = get_tool_justifications(code)
                 for o in definition.outils:
                     bullet_item(o)
-            if definition.actions_preventives:
+                    if show_justifs and o in tool_justifs:
+                        left_border_para(tool_justifs[o], color_hex=fg_c, size=9, italic=True)
+            if show_preventif and definition.actions_preventives:
                 sub_title("Actions préventives recommandées")
                 for a in definition.actions_preventives:
                     bullet_item(a)
-            if definition.professionnels:
+            if show_pros and definition.professionnels:
                 p_pro = doc.add_paragraph()
                 r_lbl = p_pro.add_run("Professionnels à mobiliser : ")
                 r_lbl.bold = True
@@ -2524,9 +2536,10 @@ elif page == "Résultats et solutions":
             color = PRIORITY_COLORS[row["Niveau"]]
             body = f"""
             <p>{priority_badge(row['Niveau'])} &nbsp;
-               <strong>Score :</strong> {int(row['Score'])} &nbsp;
+               <strong>Score :</strong> {row['Score']} &nbsp;
                <strong>Probabilité :</strong> {score_to_label(int(row['Probabilité']))} &nbsp;
-               <strong>Gravité :</strong> {score_to_label(int(row['Gravité']))}</p>
+               <strong>Gravité :</strong> {score_to_label(int(row['Gravité']))} &nbsp;
+               <strong>Pondération :</strong> {row['Pondération objectif']}</p>
             <p><strong>Objectif concerné :</strong> {definition.objectif}</p>
             <p><strong>Pourquoi ce risque est activé :</strong></p>
             {render_list(evidence.get(row['Code'], []))}
