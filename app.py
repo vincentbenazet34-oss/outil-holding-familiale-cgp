@@ -61,35 +61,35 @@ RISK_DEFINITIONS: Dict[str, RiskDefinition] = {
     "dilution": RiskDefinition(
         "dilution", "Pérennité / contrôle", "Dilution progressive du capital",
         ["Dispersion des titres entre plusieurs branches familiales", "Affaiblissement du pouvoir de décision familial", "Risque de perte de cohérence stratégique"],
-        ["Holding familiale", "Clause d’agrément", "Clause de préemption", "Actions de préférence", "Pacte d’associés"],
+        ["Holding familiale", "Clause d'agrément", "Clause de préemption", "Actions de préférence", "Pacte d'associés"],
         ["Cartographier les futurs associés", "Encadrer les entrées et sorties du capital", "Anticiper les transmissions successives"],
         ["CGP", "Avocat", "Notaire"], 4,
     ),
     "tiers": RiskDefinition(
         "tiers", "Pérennité / contrôle", "Entrée de tiers au capital",
-        ["Perte d’indépendance familiale", "Conflit stratégique avec un associé extérieur", "Remise en cause du projet familial"],
-        ["Clause d’agrément", "Clause de préemption", "Pacte d’associés", "Statuts adaptés"],
+        ["Perte d'indépendance familiale", "Conflit stratégique avec un associé extérieur", "Remise en cause du projet familial"],
+        ["Clause d'agrément", "Clause de préemption", "Pacte d'associés", "Statuts adaptés"],
         ["Formaliser les règles de cession", "Prévoir un droit de rachat prioritaire", "Vérifier la cohérence statuts / pacte"],
         ["CGP", "Avocat"], 4,
     ),
     "blocage_gouvernance": RiskDefinition(
         "blocage_gouvernance", "Pérennité / contrôle", "Blocage de gouvernance",
-        ["Paralysie décisionnelle", "Conflits entre associés actifs et passifs", "Perte de valeur ou ralentissement de l’entreprise"],
-        ["Pacte d’associés", "Charte familiale", "Conseil de famille", "Comité stratégique", "Statuts de SAS"],
+        ["Paralysie décisionnelle", "Conflits entre associés actifs et passifs", "Perte de valeur ou ralentissement de l'entreprise"],
+        ["Pacte d'associés", "Charte familiale", "Conseil de famille", "Comité stratégique", "Statuts de SAS"],
         ["Clarifier les rôles", "Définir les règles de majorité", "Organiser un dialogue familial"],
         ["CGP", "Avocat", "Conseil en gouvernance familiale"], 4,
     ),
     "successeur": RiskDefinition(
         "successeur", "Pérennité / contrôle", "Absence ou mauvaise préparation du successeur",
         ["Rupture de continuité managériale", "Perte de confiance des salariés et partenaires", "Cession subie ou direction externe non anticipée"],
-        ["Gouvernance transitoire", "Direction externe temporaire", "Actions de préférence", "Pacte d’associés", "Calendrier de transmission"],
+        ["Gouvernance transitoire", "Direction externe temporaire", "Actions de préférence", "Pacte d'associés", "Calendrier de transmission"],
         ["Identifier les intentions des héritiers", "Évaluer les compétences du successeur", "Prévoir un calendrier progressif"],
         ["CGP", "Expert-comptable", "Conseil en gouvernance", "Avocat"], 5,
     ),
     "conflit_heritiers": RiskDefinition(
         "conflit_heritiers", "Équité entre héritiers", "Conflit repreneur / non repreneurs",
-        ["Sentiment d’injustice", "Blocage de la holding", "Tensions durables entre branches familiales"],
-        ["Donation-partage", "Soulte", "Pacte d’associés", "Mécanisme de sortie", "Droits financiers différenciés"],
+        ["Sentiment d'injustice", "Blocage de la holding", "Tensions durables entre branches familiales"],
+        ["Donation-partage", "Soulte", "Pacte d'associés", "Mécanisme de sortie", "Droits financiers différenciés"],
         ["Distinguer égalité et équité", "Organiser une valorisation indépendante", "Anticiper la liquidité des non repreneurs", "Expliquer les choix avant les actes"],
         ["CGP", "Notaire", "Avocat", "Expert-comptable"], 4,
     ),
@@ -102,7 +102,7 @@ RISK_DEFINITIONS: Dict[str, RiskDefinition] = {
     ),
     "liquidite": RiskDefinition(
         "liquidite", "Équité entre héritiers", "Soulte trop lourde ou manque de liquidité",
-        ["Difficulté de paiement des soultes ou droits", "Pression excessive sur les dividendes", "Cession forcée d’actifs"],
+        ["Difficulté de paiement des soultes ou droits", "Pression excessive sur les dividendes", "Cession forcée d'actifs"],
         ["Soulte échelonnée", "Family Buy-Out", "Paiement différé/fractionné", "Assurance-vie", "Politique de distribution encadrée"],
         ["Simuler les besoins de liquidité", "Mesurer la capacité de financement", "Prévoir les conditions de sortie des héritiers non actifs"],
         ["CGP", "Expert-comptable", "Notaire", "Avocat"], 4,
@@ -116,9 +116,9 @@ RISK_DEFINITIONS: Dict[str, RiskDefinition] = {
     ),
     "dutreil": RiskDefinition(
         "dutreil", "Optimisation fiscale", "Remise en cause du Pacte Dutreil",
-        ["Perte de l’exonération partielle", "Imposition complémentaire imprévue", "Fragilisation financière des héritiers"],
+        ["Perte de l'exonération partielle", "Imposition complémentaire imprévue", "Fragilisation financière des héritiers"],
         ["Audit Dutreil", "Documentation holding animatrice", "Suivi des engagements", "Revue juridique annuelle"],
-        ["Vérifier l’éligibilité", "Documenter la qualité de holding animatrice", "Suivre les engagements de conservation"],
+        ["Vérifier l'éligibilité", "Documenter la qualité de holding animatrice", "Suivre les engagements de conservation"],
         ["CGP", "Avocat fiscaliste", "Notaire", "Expert-comptable"], 5,
     ),
     "conjoint": RiskDefinition(
@@ -130,14 +130,14 @@ RISK_DEFINITIONS: Dict[str, RiskDefinition] = {
     ),
     "dependance": RiskDefinition(
         "dependance", "Protection familiale", "Dépendance excessive au patrimoine professionnel",
-        ["Exposition aux aléas économiques de l’entreprise", "Manque de liquidité familiale", "Difficulté à protéger conjoint et héritiers"],
+        ["Exposition aux aléas économiques de l'entreprise", "Manque de liquidité familiale", "Difficulté à protéger conjoint et héritiers"],
         ["Diversification patrimoniale", "Holding patrimoniale", "Assurance-vie", "Prévoyance", "Investissements complémentaires"],
-        ["Mesurer le poids de l’entreprise", "Constituer des actifs liquides", "Prévoir des scénarios de crise"],
+        ["Mesurer le poids de l'entreprise", "Constituer des actifs liquides", "Prévoir des scénarios de crise"],
         ["CGP", "Expert-comptable", "Notaire"], 4,
     ),
     "suivi": RiskDefinition(
         "suivi", "Suivi", "Inadaptation progressive de la stratégie",
-        ["Outils devenus inadaptés", "Non-respect d’engagements fiscaux ou juridiques", "Perte de cohérence dans le temps"],
+        ["Outils devenus inadaptés", "Non-respect d'engagements fiscaux ou juridiques", "Perte de cohérence dans le temps"],
         ["Rendez-vous de suivi", "Revue des statuts", "Actualisation du pacte", "Revue patrimoniale annuelle"],
         ["Planifier une revue annuelle", "Réévaluer les objectifs familiaux", "Contrôler les engagements"],
         ["CGP", "Notaire", "Avocat", "Expert-comptable"], 3,
@@ -148,44 +148,44 @@ RISK_DEFINITIONS: Dict[str, RiskDefinition] = {
 TOOL_JUSTIFICATIONS_BY_RISK: Dict[str, Dict[str, str]] = {
     "dilution": {
         "Holding familiale": "Elle centralise la détention des titres et limite la dispersion directe du capital entre plusieurs branches familiales.",
-        "Clause d’agrément": "Elle permet de contrôler l’entrée de nouveaux associés et d’éviter qu’un tiers non souhaité intègre le capital.",
+        "Clause d'agrément": "Elle permet de contrôler l'entrée de nouveaux associés et d'éviter qu'un tiers non souhaité intègre le capital.",
         "Clause de préemption": "Elle donne une priorité de rachat aux associés familiaux avant toute cession à un tiers.",
-        "Actions de préférence": "Elles peuvent renforcer certains droits politiques afin de préserver le contrôle familial malgré l’évolution de l’actionnariat.",
-        "Pacte d’associés": "Il formalise les règles d’entrée, de sortie et de conservation des titres entre membres de la famille.",
+        "Actions de préférence": "Elles peuvent renforcer certains droits politiques afin de préserver le contrôle familial malgré l'évolution de l'actionnariat.",
+        "Pacte d'associés": "Il formalise les règles d'entrée, de sortie et de conservation des titres entre membres de la famille.",
     },
     "tiers": {
-        "Clause d’agrément": "Elle soumet l’entrée d’un nouvel associé à l’accord préalable des associés ou de l’organe compétent.",
+        "Clause d'agrément": "Elle soumet l'entrée d'un nouvel associé à l'accord préalable des associés ou de l'organe compétent.",
         "Clause de préemption": "Elle permet aux associés familiaux de se porter acquéreurs en priorité avant une cession extérieure.",
-        "Pacte d’associés": "Il encadre contractuellement les cessions et réduit le risque d’entrée non anticipée d’un tiers.",
-        "Statuts adaptés": "Ils permettent d’intégrer directement les règles de contrôle des cessions dans l’organisation juridique de la société.",
+        "Pacte d'associés": "Il encadre contractuellement les cessions et réduit le risque d'entrée non anticipée d'un tiers.",
+        "Statuts adaptés": "Ils permettent d'intégrer directement les règles de contrôle des cessions dans l'organisation juridique de la société.",
     },
     "blocage_gouvernance": {
-        "Pacte d’associés": "Il permet d’organiser les règles de décision, d’information, de sortie et de résolution des désaccords.",
-        "Charte familiale": "Elle clarifie les valeurs, les rôles et les principes de fonctionnement de la famille autour de l’entreprise.",
+        "Pacte d'associés": "Il permet d'organiser les règles de décision, d'information, de sortie et de résolution des désaccords.",
+        "Charte familiale": "Elle clarifie les valeurs, les rôles et les principes de fonctionnement de la famille autour de l'entreprise.",
         "Conseil de famille": "Il crée un espace de dialogue distinct de la gestion opérationnelle et limite la transformation des désaccords en blocages.",
-        "Comité stratégique": "Il permet d’associer certaines parties prenantes aux grandes orientations sans confondre gouvernance familiale et direction opérationnelle.",
-        "Statuts de SAS": "La souplesse statutaire de la SAS permet d’adapter les organes de décision aux besoins de la famille.",
+        "Comité stratégique": "Il permet d'associer certaines parties prenantes aux grandes orientations sans confondre gouvernance familiale et direction opérationnelle.",
+        "Statuts de SAS": "La souplesse statutaire de la SAS permet d'adapter les organes de décision aux besoins de la famille.",
     },
     "successeur": {
         "Gouvernance transitoire": "Elle accompagne le passage progressif du pouvoir entre le dirigeant et le repreneur.",
-        "Direction externe temporaire": "Elle constitue une solution de continuité lorsque le successeur familial n’est pas encore prêt ou identifié.",
+        "Direction externe temporaire": "Elle constitue une solution de continuité lorsque le successeur familial n'est pas encore prêt ou identifié.",
         "Actions de préférence": "Elles peuvent attribuer des droits adaptés au repreneur ou organiser une montée en puissance progressive.",
-        "Pacte d’associés": "Il encadre la période de transition, les droits du repreneur et les équilibres avec les autres héritiers.",
+        "Pacte d'associés": "Il encadre la période de transition, les droits du repreneur et les équilibres avec les autres héritiers.",
         "Calendrier de transmission": "Il rend la transmission opérationnelle en fixant les étapes de transfert du pouvoir et des responsabilités.",
     },
     "conflit_heritiers": {
         "Donation-partage": "Elle organise la répartition du patrimoine du vivant du dirigeant et réduit le risque de contestation entre héritiers.",
-        "Soulte": "Elle permet de compenser financièrement les héritiers non repreneurs lorsque l’entreprise est attribuée principalement au repreneur.",
-        "Pacte d’associés": "Il fixe les droits et obligations des héritiers associés, notamment les règles de sortie, d’information et de distribution.",
+        "Soulte": "Elle permet de compenser financièrement les héritiers non repreneurs lorsque l'entreprise est attribuée principalement au repreneur.",
+        "Pacte d'associés": "Il fixe les droits et obligations des héritiers associés, notamment les règles de sortie, d'information et de distribution.",
         "Mécanisme de sortie": "Il évite que les héritiers non repreneurs se sentent enfermés dans une structure peu liquide.",
         "Droits financiers différenciés": "Ils peuvent concilier pouvoir renforcé du repreneur et protection économique des héritiers non actifs.",
     },
     "contestation": {
-        "Donation-partage": "Elle permet d’anticiper le partage et de stabiliser les équilibres successoraux avant l’ouverture de la succession.",
+        "Donation-partage": "Elle permet d'anticiper le partage et de stabiliser les équilibres successoraux avant l'ouverture de la succession.",
         "Audit civil": "Il vérifie la cohérence de la stratégie avec la réserve héréditaire, les droits du conjoint et la situation familiale.",
         "Valorisation indépendante": "Elle réduit le risque de contestation sur la valeur des titres transmis.",
-        "Démembrement": "Il permet d’organiser une transmission progressive tout en maintenant certains droits au profit du dirigeant ou du conjoint.",
-        "Testament": "Il complète l’organisation successorale lorsque certaines volontés doivent être formalisées hors donation.",
+        "Démembrement": "Il permet d'organiser une transmission progressive tout en maintenant certains droits au profit du dirigeant ou du conjoint.",
+        "Testament": "Il complète l'organisation successorale lorsque certaines volontés doivent être formalisées hors donation.",
     },
     "liquidite": {
         "Soulte échelonnée": "Elle évite une charge immédiate excessive pour le repreneur ou la holding.",
@@ -195,35 +195,35 @@ TOOL_JUSTIFICATIONS_BY_RISK: Dict[str, Dict[str, str]] = {
         "Politique de distribution encadrée": "Elle donne de la visibilité aux associés familiaux sans imposer une distribution désorganisée.",
     },
     "fiscalite": {
-        "Pacte Dutreil": "Il peut réduire significativement l’assiette taxable de la transmission si les conditions sont respectées.",
-        "Donation anticipée": "Elle permet d’organiser la transmission dans le temps et de mieux maîtriser la charge fiscale.",
+        "Pacte Dutreil": "Il peut réduire significativement l'assiette taxable de la transmission si les conditions sont respectées.",
+        "Donation anticipée": "Elle permet d'organiser la transmission dans le temps et de mieux maîtriser la charge fiscale.",
         "Démembrement": "Il peut réduire la base taxable de la nue-propriété tout en maintenant certains droits économiques.",
-        "Paiement différé et fractionné": "Il n’allège pas la fiscalité, mais en facilite le financement dans le temps.",
+        "Paiement différé et fractionné": "Il n'allège pas la fiscalité, mais en facilite le financement dans le temps.",
     },
     "dutreil": {
-        "Audit Dutreil": "Il permet de vérifier l’éligibilité au régime avant la mise en œuvre et de réduire le risque de remise en cause.",
-        "Documentation holding animatrice": "Elle sécurise la qualification de la holding lorsque le bénéfice du régime dépend de son rôle d’animation.",
+        "Audit Dutreil": "Il permet de vérifier l'éligibilité au régime avant la mise en œuvre et de réduire le risque de remise en cause.",
+        "Documentation holding animatrice": "Elle sécurise la qualification de la holding lorsque le bénéfice du régime dépend de son rôle d'animation.",
         "Suivi des engagements": "Il garantit que les conditions de conservation et les obligations associées restent respectées dans le temps.",
-        "Revue juridique annuelle": "Elle permet d’identifier les opérations ou évolutions susceptibles d’affecter la sécurité du dispositif.",
+        "Revue juridique annuelle": "Elle permet d'identifier les opérations ou évolutions susceptibles d'affecter la sécurité du dispositif.",
     },
     "conjoint": {
-        "Régime matrimonial": "Son analyse permet d’identifier les droits du conjoint et d’adapter la protection du couple avant la transmission.",
+        "Régime matrimonial": "Son analyse permet d'identifier les droits du conjoint et d'adapter la protection du couple avant la transmission.",
         "Donation entre époux": "Elle peut augmenter les droits du conjoint survivant et offrir davantage de souplesse successorale.",
         "Assurance-vie": "Elle peut transmettre des capitaux disponibles au conjoint en dehors du règlement successoral ordinaire.",
         "Démembrement": "Il peut préserver des revenus ou une jouissance au profit du conjoint tout en préparant la transmission aux enfants.",
-        "Prévoyance": "Elle apporte une liquidité rapide en cas de décès ou d’incapacité du dirigeant.",
+        "Prévoyance": "Elle apporte une liquidité rapide en cas de décès ou d'incapacité du dirigeant.",
     },
     "dependance": {
-        "Diversification patrimoniale": "Elle réduit la dépendance de la famille à la seule valeur de l’entreprise.",
-        "Holding patrimoniale": "Elle peut structurer progressivement des actifs distincts de l’entreprise opérationnelle.",
+        "Diversification patrimoniale": "Elle réduit la dépendance de la famille à la seule valeur de l'entreprise.",
+        "Holding patrimoniale": "Elle peut structurer progressivement des actifs distincts de l'entreprise opérationnelle.",
         "Assurance-vie": "Elle constitue un support de liquidité et de transmission complémentaire au patrimoine professionnel.",
-        "Prévoyance": "Elle protège la famille contre un événement brutal affectant le dirigeant ou l’entreprise.",
-        "Investissements complémentaires": "Ils permettent de constituer des sources de revenus et de liquidité en dehors de l’entreprise familiale.",
+        "Prévoyance": "Elle protège la famille contre un événement brutal affectant le dirigeant ou l'entreprise.",
+        "Investissements complémentaires": "Ils permettent de constituer des sources de revenus et de liquidité en dehors de l'entreprise familiale.",
     },
     "suivi": {
-        "Rendez-vous de suivi": "Ils permettent de vérifier régulièrement que la stratégie reste adaptée à la famille et à l’entreprise.",
-        "Revue des statuts": "Elle évite que les règles de gouvernance deviennent inadaptées à l’évolution de l’actionnariat familial.",
-        "Actualisation du pacte": "Elle permet d’ajuster les règles entre associés lorsque la situation familiale ou patrimoniale évolue.",
+        "Rendez-vous de suivi": "Ils permettent de vérifier régulièrement que la stratégie reste adaptée à la famille et à l'entreprise.",
+        "Revue des statuts": "Elle évite que les règles de gouvernance deviennent inadaptées à l'évolution de l'actionnariat familial.",
+        "Actualisation du pacte": "Elle permet d'ajuster les règles entre associés lorsque la situation familiale ou patrimoniale évolue.",
         "Revue patrimoniale annuelle": "Elle contrôle la cohérence globale entre objectifs, risques, outils et besoins de liquidité.",
     },
 }
@@ -333,20 +333,20 @@ OBJECTIVE_WEIGHT_OPTIONS = ["Important", "Très important", "Prioritaire"]
 OBJECTIVE_WEIGHT_FACTORS = {"Important": 1.0, "Très important": 1.2, "Prioritaire": 1.4}
 OBJECTIVE_DISPLAY_ORDER = [
     "Conserver le contrôle familial",
-    "Transmettre l’entreprise",
+    "Transmettre l'entreprise",
     "Optimiser la fiscalité",
     "Protéger le conjoint et les proches",
-    "Préserver l’équité entre les héritiers",
+    "Préserver l'équité entre les héritiers",
     "Diversifier le patrimoine",
 ]
 RISK_TO_OBJECTIVE = {
     "dilution": "Conserver le contrôle familial",
     "tiers": "Conserver le contrôle familial",
     "blocage_gouvernance": "Conserver le contrôle familial",
-    "successeur": "Transmettre l’entreprise",
-    "conflit_heritiers": "Préserver l’équité entre les héritiers",
-    "contestation": "Préserver l’équité entre les héritiers",
-    "liquidite": "Préserver l’équité entre les héritiers",
+    "successeur": "Transmettre l'entreprise",
+    "conflit_heritiers": "Préserver l'équité entre les héritiers",
+    "contestation": "Préserver l'équité entre les héritiers",
+    "liquidite": "Préserver l'équité entre les héritiers",
     "fiscalite": "Optimiser la fiscalité",
     "dutreil": "Optimiser la fiscalité",
     "conjoint": "Protéger le conjoint et les proches",
@@ -1424,7 +1424,7 @@ def create_docx_report(client_name: str, answers: Dict, df: pd.DataFrame, eviden
         spacer()
     band_para("Diagnostic Holding Familiale",
               fg=C_WHITE, bg=C_PRIMARY, size=22, bold=True, sb=200, sa=160)
-    band_para("Système expert — Analyse des risques & plan d’action",
+    band_para("Système expert — Analyse des risques & plan d'action",
               fg=C_PRIM_L, bg=C_PRIMARY, size=11, bold=False, sb=0, sa=240)
     spacer()
     spacer()
@@ -1457,7 +1457,7 @@ def create_docx_report(client_name: str, answers: Dict, df: pd.DataFrame, eviden
     p_disc = doc.add_paragraph()
     r_disc = p_disc.add_run(
         "Document confidentiel généré automatiquement par le système expert CGP. "
-        "Ce rapport est un outil d’aide à la décision et ne constitue pas un conseil juridique ou fiscal."
+        "Ce rapport est un outil d'aide à la décision et ne constitue pas un conseil juridique ou fiscal."
     )
     r_disc.font.size = Pt(8)
     r_disc.italic = True
@@ -1491,7 +1491,7 @@ def create_docx_report(client_name: str, answers: Dict, df: pd.DataFrame, eviden
         col.width = Inches(1.4)
     spacer()
     if not detected.empty:
-        sub_title("Risques identifiés — vue d’ensemble")
+        sub_title("Risques identifiés — vue d'ensemble")
         tbl_sum = doc.add_table(rows=1 + len(detected), cols=4)
         tbl_sum.style = "Table Grid"
         for j, h in enumerate(["Risque", "Objectif concerné", "Niveau", "Score"]):
@@ -1552,11 +1552,11 @@ def create_docx_report(client_name: str, answers: Dict, df: pd.DataFrame, eviden
         ("Âge",                   str(answers.get("client_age", "—"))),
         ("Entreprise",                 answers.get("company_name") or "—"),
         ("Forme juridique",            answers.get("company_form") or "—"),
-        ("Secteur d’activité", answers.get("company_activity") or "—"),
+        ("Secteur d'activité", answers.get("company_activity") or "—"),
         ("Valeur estimée",        val_str),
         ("Poids patrimonial",          poids),
         ("Actifs liquides",            answers.get("actifs_liquides") or "—"),
-        ("Nombre d’enfants",      str(answers.get("nb_enfants", "—"))),
+        ("Nombre d'enfants",      str(answers.get("nb_enfants", "—"))),
         ("Conjoint présent",      answers.get("conjoint_present") or "—"),
         ("Famille recomposée",    answers.get("famille_recomposee") or "—"),
         ("Maturité du projet",    answers.get("maturite_projet") or "—"),
@@ -1640,7 +1640,7 @@ def create_docx_report(client_name: str, answers: Dict, df: pd.DataFrame, eviden
         doc.add_page_break()
 
     # PLAN D'ACTION
-    section_title("PLAN D’ACTION HIÉRARCHISÉ")
+    section_title("PLAN D'ACTION HIÉRARCHISÉ")
     spacer()
     plan = build_action_plan(df)
     if not plan.empty:
@@ -1685,7 +1685,7 @@ def create_docx_report(client_name: str, answers: Dict, df: pd.DataFrame, eviden
     band_para("AVERTISSEMENT LÉGAL", fg=C_WHITE, bg=C_GRAY,
               size=10, bold=True, sb=80, sa=60)
     body_para(
-        "Le présent rapport est généré automatiquement par un système expert d’aide "
+        "Le présent rapport est généré automatiquement par un système expert d'aide "
         "à la décision à destination des professionnels du conseil en gestion de patrimoine (CGP). "
         "Il ne constitue en aucun cas un conseil juridique, fiscal ou financier au sens réglementaire, "
         "et ne saurait engager la responsabilité de ses auteurs. "
@@ -2661,18 +2661,6 @@ if page == "Questionnaire adaptatif":
     render_subpage(current_sp)
     render_nav_buttons(current_idx, active_pages)
 
-    # ── DEBUG TEMPORAIRE (supprimer apres diagnostic) ──────────────────────
-    with st.expander("🔍 Debug navigation (temporaire)", expanded=False):
-        _d = st.session_state.draft_answers
-        _a = st.session_state.answers
-        st.write("**draft nb_enfants:**", _d.get("nb_enfants"), " | **answers nb_enfants:**", _a.get("nb_enfants"))
-        st.write("**draft objectifs:**", _d.get("objectifs"))
-        st.write("**answers objectifs:**", _a.get("objectifs"))
-        _test_obj = set(_d.get("objectifs") or _a.get("objectifs") or [])
-        _test_nb = int(_d.get("nb_enfants") or _a.get("nb_enfants") or 0)
-        st.write("**repreneur actif?**", _test_nb > 0 and "Transmettre l'entreprise" in _test_obj)
-        st.write("**Pages actives:**", [p["id"] for p in active_pages])
-        st.write("**w_nb_enfants in ss:**", st.session_state.get("w_nb_enfants", "ABSENT"))
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PAGE : Résultats et solutions
